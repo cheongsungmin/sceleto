@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# macOS / Linux system file
+.DS_Store
+

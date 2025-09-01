@@ -509,10 +509,10 @@ def draw_marker_blob_v2(adata,cdm_out,genes,ctlist = None,fontsize=10,
     plt.grid(False)
     
     from mpl_toolkits.axes_grid1 import make_axes_locatable
-	divider = make_axes_locatable(ax)
+    divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
     cbar = plt.colorbar(sc,cax=cax)
-    cbar.ax.tick_params(labelsize=8) 
+    cbar.ax.tick_params(labelsize=8)
     
     if save:
         plt.savefig(save,format='pdf')
