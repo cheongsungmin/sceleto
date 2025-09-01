@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sceleto"
+version = "0.0.1"
+description = "Skeleton for sceleto (marker finding)"
+requires-python = ">=3.9"
+authors = [{ name = "Your Name" }]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["sceleto*"]
+
