@@ -36,8 +36,14 @@ class MarkersBase:
         # NOTE: No validation here (skeleton). Add later.
 
     def summary(self) -> str:
-        """
-        Return a minimal string summary (skeleton).
-        """
-        return f"{self.__class__.__name__}(groupby='{self.groupby}')"
+        n_obs = getattr(self.adata, "n_obs", "?")
+        n_vars = getattr(self.adata, "n_vars", "?")
+        has_graph = hasattr(self, "_graph")
+        return (
+            f"{self.__class__.__name__}(groupby='{self.groupby}', "
+            f"n_obs={n_obs}, n_vars={n_vars}, built_graph={has_graph})"
+        )
+
+    def __repr__(self) -> str:
+        return self.summary()
 
