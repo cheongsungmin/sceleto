@@ -6,11 +6,11 @@ scanpy==1.9.6 anndata==0.10.3 umap==0.5.5 numpy==1.26.4 scipy==1.11.4 pandas==2.
 ```
 
 - 설치 방법
-- 개발 버전이니까 새로운 환경을 만드시는 것을 추천드립니다.
-- sceleto라는 폴더가 이미 있다면 덮어써집니다.
-- `git clone https://github.com/cheongsungmin/sceleto.git`
-- `cd sceleto`
-- `pip install .`
+  - 개발 버전이니까 새로운 환경을 만드시는 것을 추천드립니다.
+  - sceleto라는 폴더가 이미 있다면 덮어써집니다.
+  - `git clone https://github.com/cheongsungmin/sceleto.git`
+  - `cd sceleto`
+  - `pip install .`
 
 - adata.raw에는 log1p-transformed value가 저장되어있어야 합니다.
 - 기존 버전의 sceleto.markers.marker는 아래와 같이 `scl.markers.classic()` 함수로 사용 가능합니다.
