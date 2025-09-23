@@ -1,5 +1,4 @@
-# sceleto
-## version 3
+# sceleto (version 3)
 
 - 아래 패키지 버전에서 개발 중입니다.
 ```python
@@ -34,6 +33,5 @@ show_genes = []
 for v in out['markers'].values():
     show_genes += v[:5][::-1]
 
-sc.pl.dotplot(adata, show_genes[::-1], groupby=leiden, standard_scale='var',
-              categories_order=adata.obs[leiden].cat.categories[::-1])
+sc.pl.dotplot(adata, show_genes, groupby='Level2', standard_scale='var')
 ```
