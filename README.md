@@ -21,6 +21,7 @@ M.plot_marker()
 ```
 
 - graph 버전을 사용하시려면 PAGA graph가 있어야 합니다. 현재는 별도로 수행해서 넣는 것을 추천드립니다. `adata.uns['paga']` 가 존재해야 합니다.
+- `sc.pl.paga_compare(adata)` 함수를 사용하시면 UMAP 좌표와 비슷하게 클러스터 노드의 position이 저장됩니다.
 ```python
 MG = scl.markers.graph(adata, 'Level2')
 MG.build_graph(k=5, use_existing_paga=True, verbose=True)
@@ -43,3 +44,12 @@ for v in out['markers'].values():
 
 sc.pl.dotplot(adata, show_genes, groupby='Level2', standard_scale='var')
 ```
+
+- tuning이 필요한 과정들
+  - threshold를 어떻게 정할지
+  - given clustering 말고 across resolution의 marker gene 통합이 가능할지
+  
+- future to do list...
+  - 시각화할 때 노드 사이즈 조정 파라미터
+  - 생각나는 거 있으시면 알려주세요...
+
