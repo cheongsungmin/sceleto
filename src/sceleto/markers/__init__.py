@@ -1,19 +1,15 @@
+from __future__ import annotations
+
 from ._classic import MarkersClassic
-from ._graph import MarkersGraph
+
 
 def classic(adata, groupby: str, **kwargs) -> MarkersClassic:
-    """
-    Factory for classic (cluster-level) marker workflow.
-    Returns a MarkersClassic object (skeleton).
-    """
+    """Factory for classic (cluster-level) marker workflow."""
     return MarkersClassic(adata, groupby, **kwargs)
 
-def graph(adata, groupby: str, **kwargs) -> MarkersGraph:
-    """
-    Factory for graph (edge-level) marker workflow.
-    Returns a MarkersGraph object (skeleton).
-    """
-    return MarkersGraph(adata, groupby, **kwargs)
 
-__all__ = ["classic", "graph", "MarkersClassic", "MarkersGraph"]
+# Optional: make `from sceleto.markers import graph` work (module export)
+from . import graph as graph  # noqa: F401  # Expose subpackage as attribute
 
+
+__all__ = ["classic", "MarkersClassic", "graph"]
