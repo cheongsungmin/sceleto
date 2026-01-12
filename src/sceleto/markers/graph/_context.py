@@ -32,6 +32,9 @@ class MarkerContext:
     n_expr: np.ndarray
     frac_expr: np.ndarray
 
+    # number of cells per group (aligned to `groups`)
+    n_cells: np.ndarray        # shape (C,)
+
     # Graph-related caches (phase 1: only undirected PAGA edges)
     undirected_edges: Optional[List[Tuple[str, str]]] = None
     pos_df: Optional[pd.DataFrame] = None
@@ -47,6 +50,11 @@ class MarkerContext:
     def to_mean_norm_df(self) -> pd.DataFrame:
         """Convenience: convert `mean_norm` matrix to DataFrame."""
         return pd.DataFrame(self.mean_norm, index=self.groups, columns=self.genes)
+
+    def to_n_cells_series(self) -> pd.Series:
+        """Return cell counts as a Series aligned to ctx.groups."""
+        # Series index is cluster label, value is cell count
+        return pd.Series(self.n_cells, index=self.groups, name="n_cells")
 
 
 def get_groups(adata, groupby: str, exclude: Optional[List[str]] = None) -> List[str]:
@@ -157,15 +165,18 @@ def _build_expression_context(
     if len(genes) != G:
         raise ValueError(f"Gene dimension mismatch: len(var_names)={len(genes)} vs X.shape[1]={G}")
 
-    mean = np.zeros((C, G), dtype=dtype)
-    n_expr = np.zeros((C, G), dtype=dtype)
-    frac_expr = np.zeros((C, G), dtype=dtype)
+    mean = np.zeros((C, G), dtype=dtype)        # mean expression
+    n_expr = np.zeros((C, G), dtype=dtype)      # number of expressing cells
+    frac_expr = np.zeros((C, G), dtype=dtype)   # fraction of expressing cells
+
+    n_cells_arr = np.zeros(C, dtype=np.int32)   # cell count
 
     obs_groups = adata.obs[groupby].astype(str).to_numpy()
 
     for i, g in enumerate(groups):
         mask = (obs_groups == g)
         n_cells = int(mask.sum())
+        n_cells_arr[i] = n_cells
 
         if n_cells < min_cells_per_group:
             continue
@@ -198,6 +209,7 @@ def _build_expression_context(
         mean_norm=mean_norm,
         n_expr=n_expr,
         frac_expr=frac_expr,
+        n_cells=n_cells_arr,
         undirected_edges=None,
         pos_df=None,
     )
@@ -208,11 +220,19 @@ def _extract_paga_undirected_edges(
     *,
     groups: List[str],
     k: int,
-) -> Tuple[List[Tuple[str, str]], Optional[pd.DataFrame]]:
-    """Extract trimmed PAGA undirected edges aligned to provided `groups` order."""
+) -> Tuple[List[Tuple[str, str]], pd.DataFrame]:
+    """Extract trimmed PAGA undirected edges aligned to provided `groups` order.
+
+    Requires:
+    - adata.uns['paga']['connectivities']
+    - adata.uns['paga']['pos']
+    """
     paga = adata.uns.get("paga", None)
     if paga is None or "connectivities" not in paga:
         raise ValueError("PAGA connectivities not found. Run sc.tl.paga(adata, ...) first.")
+
+    if "pos" not in paga:
+        raise ValueError("PAGA pos not found. Run sc.pl.paga(adata, show=False) after sc.tl.paga(...) to populate paga['pos'].")
 
     con = paga["connectivities"]
     con = con.toarray() if sparse.issparse(con) else np.asarray(con)
@@ -222,9 +242,7 @@ def _extract_paga_undirected_edges(
     trimmed_con_df = top_k_edges_symmetric(con_df, k=k)
     mat = trimmed_con_df.to_numpy()
 
-    pos_df = None
-    if "pos" in paga:
-        pos_df = pd.DataFrame(paga["pos"], index=groups)
+    pos_df = pd.DataFrame(paga["pos"], index=groups)
 
     rows, cols = np.where((mat > 0) & (~np.eye(mat.shape[0], dtype=bool)))
 

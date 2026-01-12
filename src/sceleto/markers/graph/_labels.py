@@ -134,7 +134,7 @@ def _level3_expand_undetermined(
     for j in range(P):
         low_vals = mean[labels2[:, j] == -1, j]
         high_vals = mean[labels2[:, j] == 1, j]
-        if low_vals.size == 0 or high_vals.size == 0:
+        if low_vals.size < 3 or high_vals.size < 3:
             continue
 
         mu_low = float(np.mean(low_vals))
@@ -172,7 +172,8 @@ def label_levels(
     genes: Optional[List[str]] = None,
     k: float = 2.0,
     sigma_method: SigmaMethod = "sd",
-    min_margin: float = 0.2,
+    min_gap: float = 0.2,
+    min_margin: float = 0.0,
 ) -> MarkerLabels:
     """Run level1/2/3 labeling pipeline.
 
@@ -196,39 +197,35 @@ def label_levels(
     if len(genes_used) == 0:
         raise ValueError("No genes selected for labeling. Check fc_cutoff or input edge_gene_df.")
 
-    # Subset ctx.mean_norm to genes_used (and align labels1 columns)
-    gene_to_idx = {g: i for i, g in enumerate(ctx.genes.astype(str))}
+    # Subset ctx.mean_norm to genes_used
+    gene_to_idx = {str(g): i for i, g in enumerate(ctx.genes.astype(str))}
+    idx = []
+    kept_genes = []
+    for g in genes_used:
+        j = gene_to_idx.get(str(g))
+        if j is not None:
+            idx.append(j)
+            kept_genes.append(str(g))
 
-    kept_cols = [c for c, g in enumerate(genes_used) if str(g) in gene_to_idx]
-    if len(kept_cols) == 0:
+    if len(idx) == 0:
         raise ValueError("None of the selected genes were found in ctx.genes.")
 
-    labels1 = labels1[:, kept_cols]
-    genes_used = [str(genes_used[c]) for c in kept_cols]
-    idx = [gene_to_idx[g] for g in genes_used]
+    if kept_genes != genes_used:
+        keep_mask = [g in set(kept_genes) for g in genes_used]
+        labels1 = labels1[:, keep_mask]
+        genes_used = kept_genes
 
     mean_sub = ctx.mean_norm[:, idx]
 
     labels2 = _level2_push_by_mean(mean_sub, labels1)
-    labels3 = _level3_expand_undetermined(
-        mean_sub,
-        labels2,
-        k=k,
-        sigma_method=sigma_method,
-        min_margin=min_margin,
-    )
+    labels3 = _level3_expand_undetermined(mean_sub, labels2, k=k, sigma_method=sigma_method, min_gap=min_gap, min_margin=min_margin)
 
     return MarkerLabels(
         genes=list(genes_used),
         level1=labels1,
         level2=labels2,
         level3=labels3,
-        params={
-            "fc_cutoff": fc_cutoff,
-            "k": k,
-            "sigma_method": sigma_method,
-            "min_margin": min_margin,
-        },
+        params={"fc_cutoff": fc_cutoff, "k": k, "sigma_method": sigma_method, "min_gap": min_gap, "min_margin": min_margin},
     )
 
 
