@@ -10,6 +10,7 @@ from ._features import (
 )
 from ._prioritize import PrioritizationState, run_iterative_prioritization
 from ._viz import GraphVizContext, build_graph_and_pos_from_ctx
+from ._onestep import MarkerGraphRun, run_marker_graph
 
 __all__ = [
     "MarkerContext", "build_context",

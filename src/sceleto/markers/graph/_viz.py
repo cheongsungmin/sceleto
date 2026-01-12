@@ -140,8 +140,13 @@ def _pos_df_to_pos_dict(pos_df: pd.DataFrame, groups: Sequence[str]) -> Dict[str
 @dataclass
 class GraphVizContext:
     G: nx.Graph
-    pos_dict: Dict[object, Tuple[float, float]]
+    ctx: Optional["MarkerContext"] = None
+
+    # Allow None -> auto-filled from ctx.pos_df
+    pos_dict: Optional[Dict[object, Tuple[float, float]]] = None
+    # Allow None -> auto-filled from ctx.n_cells with sqrt scaling
     node_sizes: Optional[Union[int, float, Dict[object, float], Sequence[float]]] = None
+    node_size_scale: float = 10.0
 
     # Optional data slots (set once, reuse many times)
     mean_mat: Optional[pd.DataFrame] = None
@@ -162,6 +167,32 @@ class GraphVizContext:
     def __post_init__(self) -> None:
         if self.node_cast is None:
             self.node_cast = _infer_node_cast(self.G)
+
+        # Auto-fill mean_mat from ctx (if not provided)
+        if self.mean_mat is None and self.ctx is not None:
+            # default to normalized mean expression for node coloring
+            self.mean_mat = self.ctx.to_mean_norm_df()
+
+        # Auto-fill pos_dict from ctx.pos_df (if not provided)
+        if self.pos_dict is None:
+            if self.ctx is None or self.ctx.pos_df is None:
+                raise ValueError("pos_dict is None and ctx.pos_df is None. Provide pos_dict or ensure ctx has pos_df.")
+            # build positions mapping matching node types via node_cast
+            self.pos_dict = {
+                self.node_cast(str(idx)): (float(row.iloc[0]), float(row.iloc[1]))
+                for idx, row in self.ctx.pos_df.iterrows()
+            }
+
+        # Auto-fill node sizes from ctx.n_cells (if not provided)
+        if self.node_sizes is None:
+            if self.ctx is None or getattr(self.ctx, "n_cells", None) is None:
+                raise ValueError("node_sizes is None and ctx.n_cells is missing. Provide node_sizes or ensure ctx has n_cells.")
+            # sqrt(cell_count) scaling with user-provided scale factor
+            n_cells_s = pd.Series(self.ctx.n_cells, index=self.ctx.groups)
+            self.node_sizes = [
+                float(np.sqrt(n_cells_s.get(str(node), 1))) * float(self.node_size_scale)
+                for node in self.G.nodes()
+            ]
 
     def plot_gene_edges_fc(
         self,
@@ -270,7 +301,7 @@ class GraphVizContext:
             handles=patches,
             title="FC bin",
             loc="upper left",
-            bbox_to_anchor=(1.02, 1.0),
+            bbox_to_anchor=(1.30, 0.60),
             frameon=False,
             fontsize=10,
             title_fontsize=10,
