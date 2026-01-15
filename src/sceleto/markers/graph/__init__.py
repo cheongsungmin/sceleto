@@ -15,7 +15,15 @@ from ._features import (
 from ._prioritize import PrioritizationState, run_iterative_prioritization
 from ._viz import GraphVizContext, build_graph_and_pos_from_ctx
 from ._onestep import MarkerGraphRun, run_marker_graph
-from ._aggregate import compute_dst_gene_max_fc_delta
+from ._local import (
+    compute_dst_gene_max_fc_delta,
+    compute_coverage_mats,
+    local_score,
+    global_score,
+    weight_local_prioritized,
+    build_local_marker_inputs,
+    rank_local_markers,
+)
 
 __all__ = [
     "MarkerContext", "build_context",
@@ -26,4 +34,10 @@ __all__ = [
     "GraphVizContext", "build_graph_and_pos_from_ctx",
     "MarkerGraphRun", "run_marker_graph",
     "compute_dst_gene_max_fc_delta",
+    "compute_coverage_mats",
+    "local_score",
+    "global_score",
+    "weight_local_prioritized",
+    "build_local_marker_inputs",
+    "rank_local_markers",
 ]

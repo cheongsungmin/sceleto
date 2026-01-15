@@ -8,14 +8,14 @@ import pandas as pd
 
 @dataclass
 class MarkerGraphRun:
-    """Container for one-step marker-graph pipeline results (+ prioritization).
+    """Container for one-step marker-graph pipeline results.
 
     Notes
     -----
-    - This wrapper only calls existing functions; it does not change their behavior.
-    - Keeps intermediate artifacts so users can inspect step-by-step outputs.
+    - Hierarchical/specific outputs can be toggled independently.
+    - Keeps intermediate artifacts for debugging and inspection.
     """
-    # Step-by-step artifacts
+    # Core artifacts (always built if wrapper runs)
     ctx: Any
     edge_gene_df: pd.DataFrame
     edge_fc: pd.DataFrame
@@ -30,22 +30,23 @@ class MarkerGraphRun:
     gene_to_edges: Dict[str, List[str]]
     viz: Any
 
-    # Prioritization (always exists)
-    state: Any
-    marker_log: Dict[str, List[str]]
-    history: List[pd.DataFrame]
+    # Hierarchical prioritization (optional)
+    state: Optional[Any] = None
+    marker_log: Optional[Dict[str, List[str]]] = None
+    history: Optional[List[pd.DataFrame]] = None
 
-    # --- viz proxies ---
+    # Specific marker ranking (optional)
+    specific_table: Optional[pd.DataFrame] = None
+    specific_ranking_df: Optional[pd.DataFrame] = None
+    specific_marker_log: Optional[Dict[str, List[str]]] = None
+
     def plot_gene_edges_fc(self, gene: str, **kwargs):
-        """Proxy to GraphVizContext.plot_gene_edges_fc()."""
         return self.viz.plot_gene_edges_fc(gene, **kwargs)
 
     def plot_gene_levels_with_edges(self, gene: str, **kwargs):
-        """Proxy to GraphVizContext.plot_gene_levels_with_edges()."""
         return self.viz.plot_gene_levels_with_edges(gene, **kwargs)
 
     def plot_highlight_edges(self, edges, **kwargs):
-        """Proxy to GraphVizContext.plot_highlight_edges()."""
         return self.viz.plot_highlight_edges(edges, **kwargs)
 
 
@@ -54,6 +55,14 @@ def run_marker_graph(
     *,
     groupby: str,
     thres_fc: float,
+    # Mode switches
+    hierarchical_markers: bool = False,
+    specific_markers: bool = True,
+    # Specific ranking params
+    specific_A: float = 1.0,
+    specific_B: float = 0.5,
+    specific_only_high_markers: bool = True,
+    specific_score_col: str = "specific_weight",
     # Context defaults
     use_raw: bool = True,
     k: int = 5,
@@ -77,15 +86,14 @@ def run_marker_graph(
     # Graph/Viz defaults
     bidirectional: bool = True,
     node_size_scale: float = 10.0,
-    # Prioritization (user-facing)
+    # Hierarchical prioritization params
     weight_fn: Optional[Callable[[pd.DataFrame], Any]] = None,
     weight_col: str = "w1",
     stop_if_unique: bool = True,
     corr_cutoff: float = 0.9,
     max_iters: Optional[int] = None,
 ) -> MarkerGraphRun:
-    """One-step wrapper: context -> edge metrics -> labels -> viz -> prioritization."""
-    # Local imports to avoid circular imports
+    """One-step wrapper: context -> edge metrics -> labels -> viz -> (optional) hierarchical/specific outputs."""
     from . import (
         build_context,
         compute_fc_delta,
@@ -99,8 +107,13 @@ def run_marker_graph(
         run_iterative_prioritization,
     )
     from ._features import add_default_weight
+    from ._local import build_local_marker_inputs, weight_local_prioritized
 
-    # --- Guardrails: PAGA must exist and have pos (build_context already checks, but keep clearer error) ---
+    if (not hierarchical_markers) and (not specific_markers):
+        raise ValueError(
+            "At least one of hierarchical_markers=True or specific_markers=True must be set."
+        )
+
     paga = getattr(adata, "uns", {}).get("paga", None)
     if paga is None or "connectivities" not in paga:
         raise ValueError("PAGA not found. Run sc.tl.paga(adata, groups=groupby) first.")
@@ -113,7 +126,6 @@ def run_marker_graph(
     if fc_cutoff is None:
         fc_cutoff = thres_fc
 
-    # --- 1) context ---
     ctx = build_context(
         adata,
         groupby=groupby,
@@ -124,7 +136,6 @@ def run_marker_graph(
         k=k,
     )
 
-    # --- 2) edge-gene metrics (long) -> matrices ---
     edge_gene_df = compute_fc_delta(
         ctx,
         thres_fc=thres_fc,
@@ -137,7 +148,6 @@ def run_marker_graph(
     )
     edge_fc, edge_delta = edge_gene_df_to_matrices(edge_gene_df)
 
-    # --- 3) labeling -> note_df ---
     labels = label_levels(
         ctx,
         edge_gene_df,
@@ -149,10 +159,8 @@ def run_marker_graph(
     )
     note_df = labels_to_note_df(ctx, labels, level=level)  # type: ignore[arg-type]
 
-    # --- 4) graph + pos ---
     G, pos = build_graph_and_pos_from_ctx(ctx, bidirectional=bidirectional)
 
-    # --- 5) viz caches ---
     gene_edge_fc = build_gene_edge_fc_from_edge_gene_df(edge_fc, G=G)
 
     sub = edge_gene_df[edge_gene_df["fc"] >= float(thres_fc)]
@@ -172,36 +180,66 @@ def run_marker_graph(
         node_size_scale=node_size_scale,
     )
 
-    # --- 6) prioritization (ALWAYS) ---
-    mean_norm = ctx.to_mean_norm_df()
+    specific_table: Optional[pd.DataFrame] = None
+    specific_ranking_df: Optional[pd.DataFrame] = None
+    specific_marker_log: Optional[Dict[str, List[str]]] = None
 
-    state = PrioritizationState(
-        edge_fc=edge_fc,
-        edge_delta=edge_delta,
-        note_df=note_df,
-        mean_norm=mean_norm,
-    )
+    if specific_markers:
+        specific_table = build_local_marker_inputs(
+            ctx=ctx,
+            labels=labels,
+            note_df=note_df,
+            edge_fc=edge_fc,
+            edge_delta=edge_delta,
+            only_high_markers=specific_only_high_markers,
+        )
 
-    # If user didn't provide weight_fn, ensure weight_col is valid.
-    # - run_iterative_prioritization always creates "weight" by default.
-    # - If weight_col != "weight" and weight_fn is None -> it would KeyError.
-    if weight_fn is None and weight_col != "weight":
-        def _default_weight_to_col(df: pd.DataFrame) -> pd.Series:
-            # Add default weight into the requested column and return it
-            tmp = add_default_weight(df, out_col=weight_col, inplace=False)
-            return tmp[weight_col]
-        weight_fn_used = _default_weight_to_col
-    else:
-        weight_fn_used = weight_fn
+        specific_ranking_df = specific_table.copy()
+        specific_ranking_df[specific_score_col] = weight_local_prioritized(
+            specific_ranking_df, A=specific_A, B=specific_B
+        )
+        specific_ranking_df = specific_ranking_df.sort_values(
+            ["group", specific_score_col], ascending=[True, False]
+        )
+        specific_ranking_df["specific_rank"] = (
+            specific_ranking_df.groupby("group", sort=False).cumcount() + 1
+        )
 
-    marker_log, history = run_iterative_prioritization(
-        state,
-        weight_col=weight_col,
-        weight_fn=weight_fn_used,
-        corr_cutoff=corr_cutoff,
-        stop_if_unique=stop_if_unique,
-        max_iters=max_iters,
-    )
+        specific_marker_log = {}
+        for g, sdf in specific_ranking_df.groupby("group", sort=False):
+            specific_marker_log[str(g)] = sdf["gene"].astype(str).tolist()
+
+    state: Optional[Any] = None
+    marker_log: Optional[Dict[str, List[str]]] = None
+    history: Optional[List[pd.DataFrame]] = None
+
+    if hierarchical_markers:
+        mean_norm = ctx.to_mean_norm_df()
+        state = PrioritizationState(
+            edge_fc=edge_fc,
+            edge_delta=edge_delta,
+            note_df=note_df,
+            mean_norm=mean_norm,
+        )
+
+        if weight_fn is None and weight_col != "weight":
+
+            def _default_weight_to_col(df: pd.DataFrame) -> pd.Series:
+                tmp = add_default_weight(df, out_col=weight_col, inplace=False)
+                return tmp[weight_col]
+
+            weight_fn_used = _default_weight_to_col
+        else:
+            weight_fn_used = weight_fn
+
+        marker_log, history = run_iterative_prioritization(
+            state,
+            weight_col=weight_col,
+            weight_fn=weight_fn_used,
+            corr_cutoff=corr_cutoff,
+            stop_if_unique=stop_if_unique,
+            max_iters=max_iters,
+        )
 
     return MarkerGraphRun(
         ctx=ctx,
@@ -218,4 +256,7 @@ def run_marker_graph(
         state=state,
         marker_log=marker_log,
         history=history,
+        specific_table=specific_table,
+        specific_ranking_df=specific_ranking_df,
+        specific_marker_log=specific_marker_log,
     )
