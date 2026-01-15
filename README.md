@@ -1,6 +1,6 @@
 # 🚧 sceleto
 
-This repository is currently focused on updating the marker functionality in the sceleto package (https://github.com/scmgl-kaist). Only the marker-related components are implemented here for now; additional modules will be integrated later.
+This repository is currently focused on updating the marker functionality in the sceleto package (https://github.com/scmgl-kaist/sceleto). Only the marker-related components are implemented here for now; additional modules will be integrated later.
 
 ## Installation
 
@@ -38,7 +38,7 @@ pip install --user git+https://github.com/cheongsungmin/sceleto.git
 ```python
 MG = mg.run_marker_graph(
     adata,
-    groupby=leiden,
+    groupby='leiden',
     thres_fc=3.0,
 )
 
@@ -58,7 +58,8 @@ MG.plot_gene_levels_with_edges("CD3D", figsize=(7, 5))
 ```python
 import sceleto as scl
 M = scl.markers.classic(adata, 'Level2')
-M.plot_marker()
+M.plot_marker()  # Plotting dot plot
+M.mks            # Dictionary of marker genes for each cluster
 ```
 
 ## Dependencies
