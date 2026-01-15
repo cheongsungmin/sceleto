@@ -13,6 +13,7 @@ def us(adata,gene,groups=None, show=False, exclude =None,figsize=None,**kwargs):
     exclude:list,      NOT REQUIRED | List of genes to exclude. 
     figsize:float,     NOT REQUIRED | Figure size.
     """
+    import scanpy as sc
     from matplotlib import rcParams
 
     if figsize:
