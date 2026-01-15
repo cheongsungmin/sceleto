@@ -15,7 +15,7 @@ class MarkerGraphRun:
     - Hierarchical/specific outputs can be toggled independently.
     - Keeps intermediate artifacts for debugging and inspection.
     """
-    # Core artifacts (always built if wrapper runs)
+    # Core artifacts
     ctx: Any
     edge_gene_df: pd.DataFrame
     edge_fc: pd.DataFrame
@@ -31,12 +31,11 @@ class MarkerGraphRun:
     viz: Any
 
     # Hierarchical prioritization (optional)
-    state: Optional[Any] = None
-    marker_log: Optional[Dict[str, List[str]]] = None
-    history: Optional[List[pd.DataFrame]] = None
+    hierarchical_state: Optional[Any] = None
+    hierarchical_marker_log: Optional[Dict[str, List[str]]] = None
+    hierarchical_history: Optional[List[pd.DataFrame]] = None
 
     # Specific marker ranking (optional)
-    specific_table: Optional[pd.DataFrame] = None
     specific_ranking_df: Optional[pd.DataFrame] = None
     specific_marker_log: Optional[Dict[str, List[str]]] = None
 
@@ -160,7 +159,6 @@ def run_marker_graph(
     note_df = labels_to_note_df(ctx, labels, level=level)  # type: ignore[arg-type]
 
     G, pos = build_graph_and_pos_from_ctx(ctx, bidirectional=bidirectional)
-
     gene_edge_fc = build_gene_edge_fc_from_edge_gene_df(edge_fc, G=G)
 
     sub = edge_gene_df[edge_gene_df["fc"] >= float(thres_fc)]
@@ -180,12 +178,11 @@ def run_marker_graph(
         node_size_scale=node_size_scale,
     )
 
-    specific_table: Optional[pd.DataFrame] = None
     specific_ranking_df: Optional[pd.DataFrame] = None
     specific_marker_log: Optional[Dict[str, List[str]]] = None
 
     if specific_markers:
-        specific_table = build_local_marker_inputs(
+        specific_inputs_df = build_local_marker_inputs(
             ctx=ctx,
             labels=labels,
             note_df=note_df,
@@ -194,7 +191,7 @@ def run_marker_graph(
             only_high_markers=specific_only_high_markers,
         )
 
-        specific_ranking_df = specific_table.copy()
+        specific_ranking_df = specific_inputs_df.copy()
         specific_ranking_df[specific_score_col] = weight_local_prioritized(
             specific_ranking_df, A=specific_A, B=specific_B
         )
@@ -209,13 +206,13 @@ def run_marker_graph(
         for g, sdf in specific_ranking_df.groupby("group", sort=False):
             specific_marker_log[str(g)] = sdf["gene"].astype(str).tolist()
 
-    state: Optional[Any] = None
-    marker_log: Optional[Dict[str, List[str]]] = None
-    history: Optional[List[pd.DataFrame]] = None
+    hierarchical_state: Optional[Any] = None
+    hierarchical_marker_log: Optional[Dict[str, List[str]]] = None
+    hierarchical_history: Optional[List[pd.DataFrame]] = None
 
     if hierarchical_markers:
         mean_norm = ctx.to_mean_norm_df()
-        state = PrioritizationState(
+        hierarchical_state = PrioritizationState(
             edge_fc=edge_fc,
             edge_delta=edge_delta,
             note_df=note_df,
@@ -232,8 +229,8 @@ def run_marker_graph(
         else:
             weight_fn_used = weight_fn
 
-        marker_log, history = run_iterative_prioritization(
-            state,
+        hierarchical_marker_log, hierarchical_history = run_iterative_prioritization(
+            hierarchical_state,
             weight_col=weight_col,
             weight_fn=weight_fn_used,
             corr_cutoff=corr_cutoff,
@@ -253,10 +250,9 @@ def run_marker_graph(
         gene_edge_fc=gene_edge_fc,
         gene_to_edges=gene_to_edges,
         viz=viz,
-        state=state,
-        marker_log=marker_log,
-        history=history,
-        specific_table=specific_table,
+        hierarchical_state=hierarchical_state,
+        hierarchical_marker_log=hierarchical_marker_log,
+        hierarchical_history=hierarchical_history,
         specific_ranking_df=specific_ranking_df,
         specific_marker_log=specific_marker_log,
     )
