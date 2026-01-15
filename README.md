@@ -1,11 +1,23 @@
-# sceleto
+# 🚧 sceleto
 
-This repository is currently focused on updating the marker functionality in the sceleto package. Only the marker-related components are implemented here for now; additional modules will be integrated later.
+This repository is currently focused on updating the marker functionality in the sceleto package (https://github.com/scmgl-kaist). Only the marker-related components are implemented here for now; additional modules will be integrated later.
 
 ## Installation
 
 - Since this is a development version, creating a fresh environment is recommended.
-- If you already have a local folder named sceleto, cloning will overwrite it — please be careful.
+
+### Option A) Install directly from GitHub
+
+This is the quickest way if you just want to *use* the package.
+
+```bash
+pip install --user git+https://github.com/cheongsungmin/sceleto.git
+```
+
+### Option B) Clone the repository and install locally
+
+- Use this if you want to edit the code or develop.
+- **If you already have a local folder named sceleto, git clone will fail.**
 - `git clone https://github.com/cheongsungmin/sceleto.git`
 - `cd sceleto`
 - `pip install .`
@@ -16,13 +28,10 @@ This repository is currently focused on updating the marker functionality in the
 ### Prerequisites
 
 - Your AnnData object should have log1p-transformed expression values stored in adata.raw.
-
 - To use the graph-based marker workflow, you must provide:
 
-1. A **PAGA graph** stored in `adata.uns["paga"]`
-   (We recommend running PAGA separately and saving it into `adata`.)
-2. Node position coordinates (`pos`) for plotting
-   Running `sc.pl.paga_compare(adata)` will store cluster node positions in `adata.uns["paga"]["pos"]`.
+1. A PAGA graph stored in `adata.uns["paga"]`. (We recommend running PAGA separately and saving it into `adata`.)
+2. Node position coordinates (`pos`) for plotting. Running `sc.pl.paga_compare(adata)` will store cluster node positions in `adata.uns["paga"]["pos"]`.
 
 ### Usage
 
@@ -45,7 +54,7 @@ MG.plot_gene_levels_with_edges("CD3D", figsize=(7, 5))
 
 ## Note
 
-- The legacy marker workflow (sceleto.markers.marker) is still available via scl.markers.classic():
+- The legacy marker workflow (`sceleto.markers.marker`) is still available via `scl.markers.classic()`:
 ```python
 import sceleto as scl
 M = scl.markers.classic(adata, 'Level2')
