@@ -1,5 +1,9 @@
 from ._context import MarkerContext, build_context
-from ._metrics import compute_fc_delta, edge_gene_df_to_matrices, build_gene_edge_fc_from_edge_gene_df
+from ._metrics import (
+    compute_fc_delta,
+    edge_gene_df_to_matrices,
+    build_gene_edge_fc_from_edge_gene_df,
+)
 from ._labels import MarkerLabels, label_levels, labels_to_note_df
 from ._features import (
     compute_gene_features,
@@ -11,6 +15,7 @@ from ._features import (
 from ._prioritize import PrioritizationState, run_iterative_prioritization
 from ._viz import GraphVizContext, build_graph_and_pos_from_ctx
 from ._onestep import MarkerGraphRun, run_marker_graph
+from ._aggregate import compute_dst_gene_max_fc_delta
 
 __all__ = [
     "MarkerContext", "build_context",
@@ -19,4 +24,6 @@ __all__ = [
     "compute_gene_features", "add_default_weight", "WeightRule", "expr_rule", "add_score_columns",
     "PrioritizationState", "run_iterative_prioritization",
     "GraphVizContext", "build_graph_and_pos_from_ctx",
+    "MarkerGraphRun", "run_marker_graph",
+    "compute_dst_gene_max_fc_delta",
 ]
