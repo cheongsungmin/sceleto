@@ -1,4 +1,4 @@
-# 🚧 sceleto
+# 🏗️ sceleto
 
 This repository is currently focused on updating the marker functionality in the sceleto package (https://github.com/scmgl-kaist/sceleto). Only the marker-related components are implemented here for now; additional modules will be integrated later.
 
@@ -36,16 +36,44 @@ pip install --user git+https://github.com/cheongsungmin/sceleto.git
 ### Usage
 
 ```python
-MG = mg.run_marker_graph(
-    adata,
-    groupby='leiden',
-    thres_fc=3.0,
-)
-
-MG.marker_log  # Dictionary of marker genes for each cluster
+import sceleto as scl
 ```
 
-### Visualization
+Choose the options depending on your goal. The defaults are `hierarchical_markers=False` and `specific_markers=True`
+```python
+MG = scl.markers.marker(
+    adata,
+    groupby="leiden",            # cluster labels stored in adata.obs
+    k=5,                         # keep top-k neighbors per node in the PAGA graph
+    thres_fc=3.0,                # genes with FC >= 3.0 are treated as marker candidates
+    hierarchical_markers=False,  # set True to compute hierarchical marker sets (may be slower for large datasets)
+    specific_markers=True,       # set True to compute cluster-specific marker sets
+)
+```
+
+```python
+# hierarchical marker genes
+MG.hierarchical_marker_log
+```
+
+```python
+# specific marker genes
+MG.specific_marker_log
+
+show_genes = []
+for g in MG.ctx.groups:
+    show_genes += MG.specific_marker_log[str(g)][:5]
+    
+sc.pl.dotplot(
+    adata,
+    show_genes,
+    groupby=leiden,
+    standard_scale='var',
+    dot_max=0.5
+)
+```
+
+### Graph visualization
 
 ```python
 MG.plot_gene_edges_fc("CD3D", figsize=(7, 5))
@@ -57,10 +85,11 @@ MG.plot_gene_levels_with_edges("CD3D", figsize=(7, 5))
 - The legacy marker workflow (`sceleto.markers.marker`) is still available via `scl.markers.classic()`:
 ```python
 import sceleto as scl
-M = scl.markers.classic(adata, 'Level2')
-M.plot_marker()  # Plotting dot plot
-M.mks            # Dictionary of marker genes for each cluster
+MC = scl.markers.classic(adata, 'leiden')
+MC.plot_marker()  # Plotting dot plot
+MC.mks            # Dictionary of marker genes for each cluster
 ```
+- The legacy `sceleto.us` function is also available now.
 
 ## Dependencies
 
