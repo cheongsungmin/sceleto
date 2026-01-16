@@ -23,7 +23,7 @@ pip install --user git+https://github.com/cheongsungmin/sceleto.git
 - `pip install .`
 
 
-## Graph-based marker API (`sceleto.markers.graph`)
+## Graph-based marker API
 
 ### Prerequisites
 
