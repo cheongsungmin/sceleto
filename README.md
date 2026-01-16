@@ -73,12 +73,12 @@ sc.pl.dotplot(
 )
 ```
 
-## Advanced: Specific marker scoring (presets & custom)
+### Advanced: Specific marker scoring (presets & custom)
 
 By default, `scl.markers.marker` ranks specific markers using an internal scoring function that combines local evidence (in-vs-out specificity, effect size, within-cluster coverage) and global evidence (how decisively the gene separates clusters across the graph).
 Advanced users can either (1) switch among built-in presets, or (2) provide a fully custom scoring function.
 
-### Option A) Built-in score presets (1–4)
+**Option A) Built-in score presets (1–4)**
 
 You can switch the specific-marker scoring behavior via `specific_score_preset`.
 
@@ -97,7 +97,7 @@ MG = scl.markers.marker(
 )
 ```
 
-### Option B) Custom scoring function (advanced users)
+**Option B) Custom scoring function (advanced users)**
 
 You can also provide your own scoring function via `specific_score_fn`.
 If you’re unsure what columns are available, run the default pipeline once and inspect
