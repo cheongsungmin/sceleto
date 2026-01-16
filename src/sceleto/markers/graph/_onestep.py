@@ -62,6 +62,8 @@ def run_marker_graph(
     specific_B: float = 0.5,
     specific_only_high_markers: bool = True,
     specific_score_col: str = "specific_weight",
+    specific_score_preset: Optional[int] = None,
+    specific_score_fn: Optional[Callable[[pd.DataFrame], object]] = None,
     # Context defaults
     use_raw: bool = True,
     k: int = 5,
@@ -106,7 +108,7 @@ def run_marker_graph(
         run_iterative_prioritization,
     )
     from ._features import add_default_weight
-    from ._local import build_local_marker_inputs, weight_local_prioritized
+    from ._local import build_local_marker_inputs, weight_local_prioritized, make_specific_score_fn
 
     if (not hierarchical_markers) and (not specific_markers):
         raise ValueError(
@@ -192,14 +194,23 @@ def run_marker_graph(
         )
 
         specific_ranking_df = specific_inputs_df.copy()
-        specific_ranking_df[specific_score_col] = weight_local_prioritized(
-            specific_ranking_df, A=specific_A, B=specific_B
-        )
+
+        if specific_score_fn is not None:
+            # User-provided function wins
+            specific_ranking_df[specific_score_col] = specific_score_fn(specific_ranking_df)
+        elif specific_score_preset is not None:
+            fn = make_specific_score_fn(
+                int(specific_score_preset), A=specific_A, B=specific_B, eps=1e-9
+            )
+            specific_ranking_df[specific_score_col] = fn(specific_ranking_df)
+        else:
+            # Default behavior (current)
+            specific_ranking_df[specific_score_col] = weight_local_prioritized(
+                specific_ranking_df, A=specific_A, B=specific_B
+            )
+
         specific_ranking_df = specific_ranking_df.sort_values(
             ["group", specific_score_col], ascending=[True, False]
-        )
-        specific_ranking_df["specific_rank"] = (
-            specific_ranking_df.groupby("group", sort=False).cumcount() + 1
         )
 
         specific_marker_log = {}

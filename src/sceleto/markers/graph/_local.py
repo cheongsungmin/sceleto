@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Literal
 
 import numpy as np
 import pandas as pd
 
 from ._features import compute_gene_features
+
+SpecificPreset = Literal[1, 2, 3, 4]
+SpecificScoreFn = Callable[[pd.DataFrame], np.ndarray]
 
 
 def compute_dst_gene_max_fc_delta(
@@ -214,6 +217,89 @@ def weight_local_prioritized(
     L = local_score(df, eps=eps)
     G = global_score(df, eps=eps)
     return np.power(L, A) * np.power(G, B)
+
+# ================================
+# ========== Experiment ==========
+# ================================
+def local_score_soft(df: pd.DataFrame, *, eps: float = 1e-9, tau: float = 0.25) -> np.ndarray:
+    # Soft specificity: softplus(log-ratio) for smooth behavior near zero
+    cov_in = df["coverage_one"].to_numpy(dtype=float)
+    cov_out = (
+        0.5 * df["coverage_rest"].to_numpy(dtype=float)
+        + 0.5 * df["coverage_neighbor"].to_numpy(dtype=float)
+    )
+    x = np.log((cov_in + eps) / (cov_out + eps))
+    spec = np.log1p(np.exp(x / tau)) * tau
+
+    cov_term = np.sqrt(cov_in)
+    strength = np.log1p(df["max_fc"].to_numpy(dtype=float)) * np.log1p(df["max_delta"].to_numpy(dtype=float))
+    return strength * cov_term * spec
+
+
+def local_score_worst_out(df: pd.DataFrame, *, eps: float = 1e-9) -> np.ndarray:
+    # Conservative specificity: compare to worst(out) = max(rest, neighbor)
+    cov_in = df["coverage_one"].to_numpy(dtype=float)
+    cov_out = np.maximum(
+        df["coverage_rest"].to_numpy(dtype=float),
+        df["coverage_neighbor"].to_numpy(dtype=float),
+    )
+    spec = np.log((cov_in + eps) / (cov_out + eps))
+    spec = np.maximum(0.0, spec)
+
+    cov_term = np.sqrt(cov_in)
+    strength = np.log1p(df["max_fc"].to_numpy(dtype=float)) * np.log1p(df["max_delta"].to_numpy(dtype=float))
+    return strength * cov_term * spec
+
+
+def global_score_simple(df: pd.DataFrame, *, eps: float = 1e-9) -> np.ndarray:
+    # Reward decisiveness (low grey), penalize ubiquity (high)
+    decisiveness = 1.0 / (1.0 + df["n_grey"].to_numpy(dtype=float))
+    ubiq_pen = 1.0 / (1.0 + df["n_high"].to_numpy(dtype=float))
+    return (1.0 + df["gap"].to_numpy(dtype=float)) * decisiveness * ubiq_pen + eps
+
+
+def make_specific_score_fn(
+    preset: SpecificPreset,
+    *,
+    A: float = 1.0,
+    B: float = 0.5,
+    eps: float = 1e-9,
+    tau: float = 0.25,
+) -> SpecificScoreFn:
+    """Return a score_fn(df)->np.ndarray for specific marker ranking."""
+
+    if preset == 1:
+        def _fn(df: pd.DataFrame) -> np.ndarray:
+            L = local_score_soft(df, eps=eps, tau=tau)
+            G = global_score(df, eps=eps)
+            return np.power(L, A) * np.power(G, B)
+        return _fn
+
+    if preset == 2:
+        def _fn(df: pd.DataFrame) -> np.ndarray:
+            L = local_score_worst_out(df, eps=eps)
+            G = global_score(df, eps=eps)
+            return np.power(L, A) * np.power(G, B)
+        return _fn
+
+    if preset == 3:
+        def _fn(df: pd.DataFrame) -> np.ndarray:
+            L = local_score(df, eps=eps)
+            G = global_score_simple(df, eps=eps)
+            return np.power(L, A) * np.power(G, B)
+        return _fn
+
+    if preset == 4:
+        def _fn(df: pd.DataFrame) -> np.ndarray:
+            L = local_score_worst_out(df, eps=eps)
+            G = global_score_simple(df, eps=eps)
+            return np.power(L, A) * np.power(G, B)
+        return _fn
+
+    raise ValueError("preset must be one of {1,2,3,4}")
+# ================================
+# ========== Experiment ==========
+# ================================
 
 
 def build_local_marker_inputs(
