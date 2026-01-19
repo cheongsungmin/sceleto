@@ -170,8 +170,8 @@ class GraphVizContext:
 
         # Auto-fill mean_mat from ctx (if not provided)
         if self.mean_mat is None and self.ctx is not None:
-            # default to normalized mean expression for node coloring
-            self.mean_mat = self.ctx.to_mean_norm_df()
+            # default to mean expression for node coloring
+            self.mean_mat = self.ctx.to_mean_df()
 
         # Auto-fill pos_dict from ctx.pos_df (if not provided)
         if self.pos_dict is None:
