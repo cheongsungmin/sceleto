@@ -427,7 +427,7 @@ class GraphVizContext:
         node_color: str = "white",
         node_edgecolor: str = "black",
         background_edge_color: str = "lightgrey",
-        background_edge_alpha: float = 0.2,
+        background_edge_alpha: float = 0.5,
         highlight_edge_color: str = "crimson",
         highlight_edge_width: float = 2.8,
         background_edge_width: float = 1.2,
