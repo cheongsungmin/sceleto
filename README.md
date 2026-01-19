@@ -6,22 +6,9 @@ This repository is currently focused on updating the marker functionality in the
 
 - Since this is a development version, creating a fresh environment is recommended.
 
-### Option A) Install directly from GitHub
-
-This is the quickest way if you just want to *use* the package.
-
 ```bash
 pip install --user git+https://github.com/cheongsungmin/sceleto.git
 ```
-
-### Option B) Clone the repository and install locally
-
-- Use this if you want to edit the code or develop.
-- **If you already have a local folder named sceleto, git clone will fail.**
-- `git clone https://github.com/cheongsungmin/sceleto.git`
-- `cd sceleto`
-- `pip install .`
-
 
 ## Graph-based marker API
 
