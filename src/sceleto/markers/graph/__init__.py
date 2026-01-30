@@ -12,7 +12,6 @@ from ._features import (
     expr_rule,
     add_score_columns,
 )
-from ._prioritize import PrioritizationState, run_iterative_prioritization
 from ._viz import GraphVizContext, build_graph_and_pos_from_ctx
 from ._onestep import MarkerGraphRun, run_marker_graph
 from ._local import (

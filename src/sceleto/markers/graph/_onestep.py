@@ -12,7 +12,6 @@ class MarkerGraphRun:
 
     Notes
     -----
-    - Hierarchical/specific outputs can be toggled independently.
     - Keeps intermediate artifacts for debugging and inspection.
     """
     # Core artifacts
@@ -30,14 +29,9 @@ class MarkerGraphRun:
     gene_to_edges: Dict[str, List[str]]
     viz: Any
 
-    # Hierarchical prioritization (optional)
-    hierarchical_state: Optional[Any] = None
-    hierarchical_marker_log: Optional[Dict[str, List[str]]] = None
-    hierarchical_history: Optional[List[pd.DataFrame]] = None
-
-    # Specific marker ranking (optional)
-    specific_ranking_df: Optional[pd.DataFrame] = None
-    specific_marker_log: Optional[Dict[str, List[str]]] = None
+    # Specific marker outputs
+    specific_ranking_df: pd.DataFrame
+    specific_marker_log: Dict[str, List[str]]
 
     def plot_gene_edges_fc(self, gene: str, **kwargs):
         return self.viz.plot_gene_edges_fc(gene, **kwargs)
@@ -54,9 +48,6 @@ def run_marker_graph(
     *,
     groupby: str,
     thres_fc: float,
-    # Mode switches
-    hierarchical_markers: bool = False,
-    specific_markers: bool = True,
     # Specific ranking params
     specific_A: float = 1.0,
     specific_B: float = 0.5,
@@ -87,14 +78,8 @@ def run_marker_graph(
     # Graph/Viz defaults
     bidirectional: bool = True,
     node_size_scale: float = 10.0,
-    # Hierarchical prioritization params
-    weight_fn: Optional[Callable[[pd.DataFrame], Any]] = None,
-    weight_col: str = "w1",
-    stop_if_unique: bool = True,
-    corr_cutoff: float = 0.9,
-    max_iters: Optional[int] = None,
 ) -> MarkerGraphRun:
-    """One-step wrapper: context -> edge metrics -> labels -> viz -> (optional) hierarchical/specific outputs."""
+    """One-step wrapper: context -> edge metrics -> labels -> viz -> specific marker discovery"""
     from . import (
         build_context,
         compute_fc_delta,
@@ -104,11 +89,12 @@ def run_marker_graph(
         build_graph_and_pos_from_ctx,
         build_gene_edge_fc_from_edge_gene_df,
         GraphVizContext,
-        PrioritizationState,
-        run_iterative_prioritization,
     )
-    from ._features import add_default_weight
-    from ._local import build_local_marker_inputs, weight_local_prioritized, make_specific_score_fn
+    from ._local import (
+        build_local_marker_inputs,
+        weight_local_prioritized,
+        make_specific_score_fn,
+    )
 
     import scanpy as sc
     import matplotlib.pyplot as plt
@@ -233,38 +219,6 @@ def run_marker_graph(
         for g, sdf in specific_ranking_df.groupby("group", sort=False):
             specific_marker_log[str(g)] = sdf["gene"].astype(str).tolist()
 
-    hierarchical_state: Optional[Any] = None
-    hierarchical_marker_log: Optional[Dict[str, List[str]]] = None
-    hierarchical_history: Optional[List[pd.DataFrame]] = None
-
-    if hierarchical_markers:
-        mean_norm = ctx.to_mean_norm_df()
-        hierarchical_state = PrioritizationState(
-            edge_fc=edge_fc,
-            edge_delta=edge_delta,
-            note_df=note_df,
-            mean_norm=mean_norm,
-        )
-
-        if weight_fn is None and weight_col != "weight":
-
-            def _default_weight_to_col(df: pd.DataFrame) -> pd.Series:
-                tmp = add_default_weight(df, out_col=weight_col, inplace=False)
-                return tmp[weight_col]
-
-            weight_fn_used = _default_weight_to_col
-        else:
-            weight_fn_used = weight_fn
-
-        hierarchical_marker_log, hierarchical_history = run_iterative_prioritization(
-            hierarchical_state,
-            weight_col=weight_col,
-            weight_fn=weight_fn_used,
-            corr_cutoff=corr_cutoff,
-            stop_if_unique=stop_if_unique,
-            max_iters=max_iters,
-        )
-
     return MarkerGraphRun(
         ctx=ctx,
         edge_gene_df=edge_gene_df,
@@ -277,9 +231,6 @@ def run_marker_graph(
         gene_edge_fc=gene_edge_fc,
         gene_to_edges=gene_to_edges,
         viz=viz,
-        hierarchical_state=hierarchical_state,
-        hierarchical_marker_log=hierarchical_marker_log,
-        hierarchical_history=hierarchical_history,
         specific_ranking_df=specific_ranking_df,
         specific_marker_log=specific_marker_log,
     )
