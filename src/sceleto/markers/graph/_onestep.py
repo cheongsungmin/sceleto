@@ -110,19 +110,35 @@ def run_marker_graph(
     from ._features import add_default_weight
     from ._local import build_local_marker_inputs, weight_local_prioritized, make_specific_score_fn
 
+    import scanpy as sc
+    import matplotlib.pyplot as plt
+
     if (not hierarchical_markers) and (not specific_markers):
         raise ValueError(
             "At least one of hierarchical_markers=True or specific_markers=True must be set."
         )
 
+    # --- Ensure PAGA exists; compute if missing ---
     paga = getattr(adata, "uns", {}).get("paga", None)
+
     if paga is None or "connectivities" not in paga:
-        raise ValueError("PAGA not found. Run sc.tl.paga(adata, groups=groupby) first.")
+        # PAGA requires neighbors graph
+        if "neighbors" not in getattr(adata, "uns", {}):
+            sc.pp.neighbors(adata)
+        sc.tl.paga(adata, groups=groupby)
+
+    # --- Ensure PAGA positions exist; populate if missing ---
+    paga = adata.uns.get("paga", {})
     if "pos" not in paga:
-        raise ValueError(
-            "PAGA positions (adata.uns['paga']['pos']) not found. "
-            "Run sc.pl.paga(adata, show=False) after sc.tl.paga(...) to populate paga['pos']."
-        )
+        # Populate paga['pos'] without showing any output
+        # Prefer paga_compare; fallback to paga if something fails (e.g., missing embeddings)
+        try:
+            sc.pl.paga_compare(adata, show=False)
+        except Exception:
+            sc.pl.paga(adata, show=False)
+
+        # Close any figures created internally
+        plt.close("all")
 
     if fc_cutoff is None:
         fc_cutoff = thres_fc
