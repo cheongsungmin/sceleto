@@ -99,11 +99,6 @@ def run_marker_graph(
     import scanpy as sc
     import matplotlib.pyplot as plt
 
-    if (not hierarchical_markers) and (not specific_markers):
-        raise ValueError(
-            "At least one of hierarchical_markers=True or specific_markers=True must be set."
-        )
-
     # --- Ensure PAGA exists; compute if missing ---
     paga = getattr(adata, "uns", {}).get("paga", None)
 
@@ -182,42 +177,41 @@ def run_marker_graph(
         node_size_scale=node_size_scale,
     )
 
-    specific_ranking_df: Optional[pd.DataFrame] = None
-    specific_marker_log: Optional[Dict[str, List[str]]] = None
+    specific_ranking_df: pd.DataFrame
+    specific_marker_log: Dict[str, List[str]]
 
-    if specific_markers:
-        specific_inputs_df = build_local_marker_inputs(
-            ctx=ctx,
-            labels=labels,
-            note_df=note_df,
-            edge_fc=edge_fc,
-            edge_delta=edge_delta,
-            only_high_markers=specific_only_high_markers,
+    specific_inputs_df = build_local_marker_inputs(
+        ctx=ctx,
+        labels=labels,
+        note_df=note_df,
+        edge_fc=edge_fc,
+        edge_delta=edge_delta,
+        only_high_markers=specific_only_high_markers,
+    )
+
+    specific_ranking_df = specific_inputs_df.copy()
+
+    if specific_score_fn is not None:
+        # User-provided function wins
+        specific_ranking_df[specific_score_col] = specific_score_fn(specific_ranking_df)
+    elif specific_score_preset is not None:
+        fn = make_specific_score_fn(
+            int(specific_score_preset), A=specific_A, B=specific_B, eps=1e-9
+        )
+        specific_ranking_df[specific_score_col] = fn(specific_ranking_df)
+    else:
+        # Default behavior (current)
+        specific_ranking_df[specific_score_col] = weight_local_prioritized(
+            specific_ranking_df, A=specific_A, B=specific_B
         )
 
-        specific_ranking_df = specific_inputs_df.copy()
+    specific_ranking_df = specific_ranking_df.sort_values(
+        ["group", specific_score_col], ascending=[True, False]
+    )
 
-        if specific_score_fn is not None:
-            # User-provided function wins
-            specific_ranking_df[specific_score_col] = specific_score_fn(specific_ranking_df)
-        elif specific_score_preset is not None:
-            fn = make_specific_score_fn(
-                int(specific_score_preset), A=specific_A, B=specific_B, eps=1e-9
-            )
-            specific_ranking_df[specific_score_col] = fn(specific_ranking_df)
-        else:
-            # Default behavior (current)
-            specific_ranking_df[specific_score_col] = weight_local_prioritized(
-                specific_ranking_df, A=specific_A, B=specific_B
-            )
-
-        specific_ranking_df = specific_ranking_df.sort_values(
-            ["group", specific_score_col], ascending=[True, False]
-        )
-
-        specific_marker_log = {}
-        for g, sdf in specific_ranking_df.groupby("group", sort=False):
-            specific_marker_log[str(g)] = sdf["gene"].astype(str).tolist()
+    specific_marker_log = {}
+    for g, sdf in specific_ranking_df.groupby("group", sort=False):
+        specific_marker_log[str(g)] = sdf["gene"].astype(str).tolist()
 
     return MarkerGraphRun(
         ctx=ctx,
