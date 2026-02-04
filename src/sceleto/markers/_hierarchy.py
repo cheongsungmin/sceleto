@@ -14,6 +14,8 @@ class HierarchyRun:
     params: Dict[str, Any]
 
     # Key artifacts you already build
+    icls: pd.Series
+    path: pd.Series
     icls_full_dict: Dict[str, str]
     icls_path_df: pd.DataFrame
     marker_rank_df: pd.DataFrame
@@ -382,6 +384,8 @@ def hierarchy(
     return HierarchyRun(
         levels=[str(g0), str(g1), str(g2)],
         params={"min_cells_for_path": int(min_cells_for_path), "n_top_markers": int(n_top_markers)},
+        icls=adata.obs["icls"],
+        path=adata.obs["path"],
         icls_full_dict=icls_full_dict,
         icls_path_df=df_icls_path,
         marker_rank_df=df_marker_rank,

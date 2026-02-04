@@ -22,7 +22,7 @@ def marker(
     """Graph-based marker workflow (one-word entry point)."""
     from .graph import run_marker_graph  # Lazy import to keep namespace clean
     return run_marker_graph(
-        adata,
+        adata.copy(),
         groupby=groupby,
         k=k,
         thres_fc=thres_fc,
@@ -32,7 +32,7 @@ def marker(
 
 def hierarchy(adata, marker_runs, **kwargs) -> HierarchyRun:
     """Wrapper for cross-resolution hierarchy workflow."""
-    return _hierarchy(adata, marker_runs, **kwargs)
+    return _hierarchy(adata.copy(), marker_runs, **kwargs)
 
 
 def __dir__():
