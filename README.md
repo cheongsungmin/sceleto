@@ -70,7 +70,7 @@ res = scl.markers.hierarchy(
     adata, 
     [MG0, MG1, MG2], 
     min_cells_for_path=500, 
-    n_top_markers=50
+    n_top_markers=10
 )
 ```
 
