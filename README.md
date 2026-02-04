@@ -103,6 +103,8 @@ MC.mks            # Dictionary of marker genes for each cluster
 ```
 - The legacy `sceleto.us` function is also available now.
 
+- The function runs PAGA when no PAGA information is available. Otherwise, it uses the precomputed PAGA results. Ensure that PAGA information for the group of interest is present before computing markers.
+
 ## Dependencies
 
 ```
