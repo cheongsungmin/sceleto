@@ -33,18 +33,11 @@ MG = scl.markers.marker(
     groupby="leiden",            # cluster labels stored in adata.obs
     k=5,                         # keep top-k neighbors per node in the PAGA graph
     thres_fc=3.0,                # genes with FC >= 3.0 are treated as marker candidates
-    hierarchical_markers=False,  # set True to compute hierarchical marker sets (may be slower for large datasets)
-    specific_markers=True,       # set True to compute cluster-specific marker sets
 )
 ```
 
 ```python
-# hierarchical marker genes
-MG.hierarchical_marker_log
-```
-
-```python
-# specific marker genes
+# Marker genes are stored in a dictionary format
 MG.specific_marker_log
 
 show_genes = []
@@ -60,52 +53,36 @@ sc.pl.dotplot(
 )
 ```
 
-### Advanced: Specific marker scoring (presets & custom)
+**Recovering hierarchical marker genes**
 
-By default, `scl.markers.marker` ranks specific markers using an internal scoring function that combines local evidence (in-vs-out specificity, effect size, within-cluster coverage) and global evidence (how decisively the gene separates clusters across the graph).
-Advanced users can either (1) switch among built-in presets, or (2) provide a fully custom scoring function.
+You can trace marker genes across multiple clustering resolutions to build a hierarchical lineage.
 
-**Option A) Built-in score presets (1–4)**
-
-You can switch the specific-marker scoring behavior via `specific_score_preset`.
-
-* **Preset 1**: Smooth / forgiving around borderline genes (less brittle thresholds).
-* **Preset 2**: More conservative specificity (compares against the “worst” out-group; stricter).
-* **Preset 3**: Simpler global term (more interpretable, lighter regularization).
-* **Preset 4**: Most conservative + simple global term (strict and stable).
+> Note: Currently, this feature supports exactly three levels of grouping. You must compute the markers for each resolution (e.g., MG0, MG1, MG2) before building the hierarchy.
 
 ```python
-import sceleto as scl
+# 1. Compute markers for different resolutions
+MG0 = scl.markers.marker(adata, groupby="leiden_1.0")
+MG1 = scl.markers.marker(adata, groupby="leiden_2.0")
+MG2 = scl.markers.marker(adata, groupby="leiden_4.0")
 
-MG = scl.markers.marker(
-    adata,
-    groupby="leiden",
-    specific_score_preset=2,   # 1, 2, 3, or 4
+# 2. Build the hierarchy
+res = scl.markers.hierarchy(
+    adata, 
+    [MG0, MG1, MG2], 
+    min_cells_for_path=500, 
+    n_top_markers=50
 )
 ```
 
-**Option B) Custom scoring function (advanced users)**
-
-You can also provide your own scoring function via `specific_score_fn`.
-If you’re unsure what columns are available, run the default pipeline once and inspect
-`MG.specific_ranking_df` (it contains the computed per-gene features used for ranking).
-
-```python
-import sceleto as scl
-
-def my_score(df):
-    # Example: reward strong edge separation and in-cluster coverage,
-    # while penalizing genes that are high in many clusters.
-    return (df["max_delta"] * df["coverage_one"]) / (1.0 + df["n_high"])
-
-MG = scl.markers.marker(
-    adata,
-    groupby="leiden",
-    specific_score_fn=my_score,
-)
-
-# Explore available features/columns:
-MG.specific_ranking_df.head()
+The hierarchical structure is stored in `res.icls` and `res.path`. When printed, it displays the marker tree as follows:
+```
+Hierarchical Marker Tree
+==============================
+├── leiden_0.5@0 :: Markers: ACTN1, FHIT, AIF1, BEX3, ARMH1
+    ├── leiden_1.0@0 :: Markers: TSHZ2, FHIT, SYPL1, SOCS3, TRAC
+        ├── leiden_1.5@0 (icls [0]) :: Markers: FHIT, ACTN1, TSHZ2, AIF1, OXNAD1
+        ├── leiden_1.5@3 (icls [1]) :: Markers: NSG1, CTSH, CISH, TIMP1, PTGER2
+    ...
 ```
 
 ### Graph visualization
