@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ._classic import MarkersClassic
+from ._hierarchy import hierarchy as _hierarchy, HierarchyRun
 
 
 def classic(adata, groupby: str, **kwargs) -> MarkersClassic:
@@ -18,21 +19,7 @@ def marker(
     thres_fc: float = 3.0,
     **kwargs: Any,
 ):
-    """Graph-based marker workflow (one-word entry point).
-
-    Parameters
-    ----------
-    adata
-        AnnData object.
-    groupby
-        Key in `adata.obs` that contains cluster labels (e.g., "leiden").
-    k
-        Trim PAGA graph to top-k neighbors per node.
-    thres_fc
-        Fold-change threshold used to consider marker candidates.
-    **kwargs
-        Passed through to `sceleto.markers.graph.run_marker_graph`.
-    """
+    """Graph-based marker workflow (one-word entry point)."""
     from .graph import run_marker_graph  # Lazy import to keep namespace clean
     return run_marker_graph(
         adata,
@@ -43,8 +30,13 @@ def marker(
     )
 
 
+def hierarchy(adata, marker_runs, **kwargs) -> HierarchyRun:
+    """Wrapper for cross-resolution hierarchy workflow."""
+    return _hierarchy(adata, marker_runs, **kwargs)
+
+
 def __dir__():
-    return ["classic", "marker"]
+    return ["classic", "marker", "hierarchy", "HierarchyRun"]
 
 
-__all__ = ["classic", "marker"]
+__all__ = ["classic", "marker", "hierarchy", "HierarchyRun"]
