@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sceleto"
-version = "0.0.1"
+version = "0.0.2"
 description = "Skeleton for sceleto (marker finding)"
 requires-python = ">=3.9"
 authors = [{ name = "Your Name" }]
