@@ -99,18 +99,25 @@ def run_marker_graph(
     import scanpy as sc
     import matplotlib.pyplot as plt
 
-    # --- Ensure PAGA exists; compute if missing ---
+    # --- Ensure PAGA exists and matches the current groupby ---
     paga = getattr(adata, "uns", {}).get("paga", None)
+    need_paga = paga is None or "connectivities" not in paga
 
-    if paga is None or "connectivities" not in paga:
+    if not need_paga:
+        # Re-run if connectivities shape doesn't match the groupby categories
+        n_groups = adata.obs[groupby].nunique()
+        if paga["connectivities"].shape[0] != n_groups:
+            need_paga = True
+
+    if need_paga:
         # PAGA requires neighbors graph
         if "neighbors" not in getattr(adata, "uns", {}):
             sc.pp.neighbors(adata)
         sc.tl.paga(adata, groups=groupby)
 
-    # --- Ensure PAGA positions exist; populate if missing ---
+    # --- Ensure PAGA positions exist; populate if missing or stale ---
     paga = adata.uns.get("paga", {})
-    if "pos" not in paga:
+    if "pos" not in paga or need_paga:
         # Populate paga['pos'] without showing any output
         # Prefer paga_compare; fallback to paga if something fails (e.g., missing embeddings)
         try:
