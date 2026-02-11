@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
+
+from .._gene_filter import GeneFilter
 
 
 @dataclass
@@ -41,6 +43,40 @@ class MarkerGraphRun:
 
     def plot_highlight_edges(self, edges, **kwargs):
         return self.viz.plot_highlight_edges(edges, **kwargs)
+
+    def top_markers(
+        self,
+        group: str,
+        n: int = 10,
+        gene_filter: Optional[GeneFilter] = None,
+    ) -> List[str]:
+        """Return top-*n* markers for *group*, optionally filtered.
+
+        Parameters
+        ----------
+        group
+            Group key (must exist in ``specific_marker_log``).
+        n
+            Number of markers to return.
+        gene_filter
+            Optional :class:`GeneFilter`.  Excluded genes are skipped and
+            the next-ranked gene fills the slot.
+        """
+        genes = self.specific_marker_log[group]
+        if gene_filter is not None:
+            genes = gene_filter.filter(genes)
+        return genes[:n]
+
+    def top_markers_dict(
+        self,
+        n: int = 10,
+        gene_filter: Optional[GeneFilter] = None,
+    ) -> Dict[str, List[str]]:
+        """Return :meth:`top_markers` for every group as a dict."""
+        return {
+            g: self.top_markers(g, n=n, gene_filter=gene_filter)
+            for g in self.specific_marker_log
+        }
 
 
 def run_marker_graph(

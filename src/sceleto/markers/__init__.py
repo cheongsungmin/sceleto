@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ._classic import MarkersClassic
+from ._gene_filter import GeneFilter, EXCLUDE_PATTERNS
 from ._hierarchy import hierarchy as _hierarchy, HierarchyRun
 
 
@@ -36,7 +37,7 @@ def hierarchy(adata, marker_runs, **kwargs) -> HierarchyRun:
 
 
 def __dir__():
-    return ["classic", "marker", "hierarchy", "HierarchyRun"]
+    return ["classic", "marker", "hierarchy", "HierarchyRun", "GeneFilter", "EXCLUDE_PATTERNS"]
 
 
-__all__ = ["classic", "marker", "hierarchy", "HierarchyRun"]
+__all__ = ["classic", "marker", "hierarchy", "HierarchyRun", "GeneFilter", "EXCLUDE_PATTERNS"]

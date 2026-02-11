@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Sequence, Tuple, Optional
 import numpy as np
 import pandas as pd
 
+from ._gene_filter import GeneFilter
+
 
 @dataclass
 class HierarchyRun:
@@ -25,20 +27,30 @@ class HierarchyRun:
     tree_root: Dict[str, Any]
     icls_to_path: Dict[int, List[str]]
 
+    # Full (untruncated) ranked gene lists per leiden ID
+    full_gene_lists: Dict[str, List[str]]
+
     # Output from your printing traversal (markers per branching)
     markers: Any
 
-    def compare_markers(self, icls: str, *, figsize=None):
+    def compare_markers(
+        self,
+        icls: str,
+        *,
+        figsize=None,
+        gene_filter: Optional[GeneFilter] = None,
+    ):
         """Visualize top-N marker overlap across levels for a given icls.
 
         Parameters
         ----------
         icls
             ICLS id (string/int).
-        n_top
-            Number of top markers per level to include. Defaults to self.params["n_top_markers"].
         figsize
             Matplotlib figsize. If None, computed automatically.
+        gene_filter
+            Optional :class:`GeneFilter`.  Excluded genes are skipped and
+            the next-ranked gene fills the slot.
         """
         import matplotlib.pyplot as plt
         import seaborn as sns
@@ -50,12 +62,10 @@ class HierarchyRun:
         # Build gene sets per level
         sets = []
         for lid in leiden_list:
-            genes = (
-                self.marker_rank_df[self.marker_rank_df["leiden"] == lid]
-                .sort_values("rank")["gene"]
-                .tolist()[:n]
-            )
-            sets.append(set(genes))
+            genes = self.full_gene_lists[lid]
+            if gene_filter is not None:
+                genes = gene_filter.filter(genes)
+            sets.append(set(genes[:n]))
 
         # Build dataframe for gene sets per level
         union = sorted(set().union(*sets))
@@ -88,6 +98,7 @@ def hierarchy(
     *,
     min_cells_for_path: int = 500,
     n_top_markers: int = 10,
+    gene_filter: Optional[GeneFilter] = None,
 ) -> HierarchyRun:
     """
     Run the user's hierarchy pipeline as-is and return all intermediate tables.
@@ -165,17 +176,14 @@ def hierarchy(
     df_icls_path = df_icls_path.reset_index(names="icls")
 
     rows: List[List[Any]] = []
-    for k, v in markers_list[0].specific_marker_log.items():
-        for i, gene in enumerate(v[:n_top_markers]):
-            rows.append([f"{g0}", f"{g0}@{k}", gene, i + 1])
-
-    for k, v in markers_list[1].specific_marker_log.items():
-        for i, gene in enumerate(v[:n_top_markers]):
-            rows.append([f"{g1}", f"{g1}@{k}", gene, i + 1])
-
-    for k, v in markers_list[2].specific_marker_log.items():
-        for i, gene in enumerate(v[:n_top_markers]):
-            rows.append([f"{g2}", f"{g2}@{k}", gene, i + 1])
+    full_gene_lists: Dict[str, List[str]] = {}
+    for level_key, marker_output in zip([g0, g1, g2], markers_list):
+        for k, v in marker_output.specific_marker_log.items():
+            leiden_id = f"{level_key}@{k}"
+            full_gene_lists[leiden_id] = list(v)
+            genes = gene_filter.filter(v) if gene_filter is not None else v
+            for i, gene in enumerate(genes[:n_top_markers]):
+                rows.append([f"{level_key}", leiden_id, gene, i + 1])
 
     df_marker_rank = pd.DataFrame(rows, columns=["resolution", "leiden", "gene", "rank"])
 
@@ -408,7 +416,10 @@ def hierarchy(
             # Format Markers
             marker_str = ""
             if child_name in markers:
-                top_genes = [f"{m[0]}" for m in markers[child_name]]  # (Gene, Score, Rank, Excl)
+                top_genes = [
+                    f"{m[0]}" for m in markers[child_name]
+                    if gene_filter is None or gene_filter(m[0])
+                ]
                 marker_str = f" :: Markers: {', '.join(top_genes)}"
 
             # ICLS info (if leaf)
@@ -439,5 +450,6 @@ def hierarchy(
         score_df=score_df,
         tree_root=tree_root,
         icls_to_path=icls_to_path,
+        full_gene_lists=full_gene_lists,
         markers=markers,
     )
