@@ -32,7 +32,7 @@ def marker(
 
 def hierarchy(adata, marker_runs, **kwargs) -> HierarchyRun:
     """Wrapper for cross-resolution hierarchy workflow."""
-    return _hierarchy(adata.copy(), marker_runs, **kwargs)
+    return _hierarchy(adata, marker_runs, **kwargs)
 
 
 def __dir__():

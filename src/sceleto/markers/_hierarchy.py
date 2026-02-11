@@ -14,8 +14,6 @@ class HierarchyRun:
     params: Dict[str, Any]
 
     # Key artifacts you already build
-    icls: pd.Series
-    path: pd.Series
     icls_full_dict: Dict[str, str]
     icls_path_df: pd.DataFrame
     marker_rank_df: pd.DataFrame
@@ -29,6 +27,59 @@ class HierarchyRun:
 
     # Output from your printing traversal (markers per branching)
     markers: Any
+
+    def compare_markers(self, icls: str, *, figsize=None):
+        """Visualize top-N marker overlap across levels for a given icls.
+
+        Parameters
+        ----------
+        icls
+            ICLS id (string/int).
+        n_top
+            Number of top markers per level to include. Defaults to self.params["n_top_markers"].
+        figsize
+            Matplotlib figsize. If None, computed automatically.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        # Get the leiden IDs for each level for this icls
+        leiden_list = self.icls_path_df.set_index("icls").loc[icls, self.levels].tolist()
+        n = self.params["n_top_markers"]
+
+        # Build gene sets per level
+        sets = []
+        for lid in leiden_list:
+            genes = (
+                self.marker_rank_df[self.marker_rank_df["leiden"] == lid]
+                .sort_values("rank")["gene"]
+                .tolist()[:n]
+            )
+            sets.append(set(genes))
+
+        # Build dataframe for gene sets per level
+        union = sorted(set().union(*sets))
+        df = pd.DataFrame(
+            {lid: [1 if g in s else 0 for g in union] for lid, s in zip(leiden_list, sets)},
+            index=union,
+        ).sort_values(leiden_list, ascending=False).T
+
+        # use user provided figsize, otherwise compute automatically
+        if figsize is None:
+            figsize = (len(union) * 0.4, 2)
+
+        plt.figure(figsize=figsize)
+        sns.heatmap(
+            df,
+            cmap="Blues",
+            linewidths=0.5,
+            linecolor="black",
+            cbar=False,
+            xticklabels=True,
+        )
+        plt.title(f'Marker genes for path {icls}')
+        plt.xlabel("")
+        plt.show()
 
 
 def hierarchy(
@@ -377,15 +428,9 @@ def hierarchy(
     # Execute
     markers = print_tree(tree_root)
 
-    # ----------------------------
-    # (User code) 그대로 끝
-    # ----------------------------
-
     return HierarchyRun(
         levels=[str(g0), str(g1), str(g2)],
         params={"min_cells_for_path": int(min_cells_for_path), "n_top_markers": int(n_top_markers)},
-        icls=adata.obs["icls"],
-        path=adata.obs["path"],
         icls_full_dict=icls_full_dict,
         icls_path_df=df_icls_path,
         marker_rank_df=df_marker_rank,
