@@ -9,6 +9,18 @@ import pandas as pd
 from ._gene_filter import GeneFilter
 
 
+@dataclass(frozen=True)
+class BatchExpression:
+    """Per-batch expression arrays for one resolution level."""
+
+    mean: np.ndarray  # (n_groups, n_batches, n_genes)
+    frac_expr: np.ndarray  # (n_groups, n_batches, n_genes)
+    groups: List[str]
+    batches: List[str]
+    genes: np.ndarray
+    group_to_idx: Dict[str, int]
+
+
 @dataclass
 class HierarchyRun:
     # Inputs / meta
@@ -30,6 +42,15 @@ class HierarchyRun:
     # Full (untruncated) ranked gene lists per leiden ID
     full_gene_lists: Dict[str, List[str]]
 
+    # Expression contexts per resolution (groupby -> MarkerContext)
+    contexts: Dict[str, Any]
+
+    # Per-batch expression data (groupby -> BatchExpression); None if no batch_key
+    batch_expression: Optional[Dict[str, BatchExpression]]
+
+    # Batch key used (None if not provided)
+    batch_key: Optional[str]
+
     # Output from your printing traversal (markers per branching)
     markers: Any
 
@@ -40,6 +61,10 @@ class HierarchyRun:
         figsize=None,
         gene_filter: Optional[GeneFilter] = None,
         return_genes: bool = False,
+        mode: str = "heatmap",
+        show_batch: Optional[bool] = None,
+        cmap: str = "OrRd",
+        dot_max: Optional[float] = None,
     ):
         """Visualize top-N marker overlap across levels for a given icls.
 
@@ -55,15 +80,24 @@ class HierarchyRun:
         return_genes
             If True, return the sorted union of marker genes across levels
             instead of plotting.
+        mode
+            ``"heatmap"`` (default) for a binary presence heatmap, or
+            ``"dotplot"`` for an expression dot plot (color = mean expression,
+            size = fraction expressing).
+        show_batch
+            Whether to show per-batch sub-rows in dotplot mode.  ``None``
+            (default) auto-detects: ``True`` when batch data is available.
+        cmap
+            Colormap for dotplot mode (default ``"OrRd"``).
+        dot_max
+            Maximum dot size in points² for dotplot mode.
         """
         import matplotlib.pyplot as plt
-        import seaborn as sns
 
-        # Get the leiden IDs for each level for this icls
+        # --- Shared gene-selection logic ---
         leiden_list = self.icls_path_df.set_index("icls").loc[icls, self.levels].tolist()
         n = self.params["n_top_markers"]
 
-        # Build gene sets per level
         sets = []
         for lid in leiden_list:
             genes = self.full_gene_lists[lid]
@@ -71,33 +105,294 @@ class HierarchyRun:
                 genes = gene_filter.filter(genes)
             sets.append(set(genes[:n]))
 
-        # Build dataframe for gene sets per level
         union = sorted(set().union(*sets))
-
-        df = pd.DataFrame(
-            {lid: [1 if g in s else 0 for g in union] for lid, s in zip(leiden_list, sets)},
-            index=union,
-        ).sort_values(leiden_list, ascending=False).T
-
-        # use user provided figsize, otherwise compute automatically
-        if figsize is None:
-            figsize = (len(union) * 0.4, 2)
-
-        plt.figure(figsize=figsize)
-        sns.heatmap(
-            df,
-            cmap="Blues",
-            linewidths=0.5,
-            linecolor="black",
-            cbar=False,
-            xticklabels=True,
-        )
-        plt.title(f'Marker genes for path {icls}')
-        plt.xlabel("")
-        plt.show()
 
         if return_genes:
             return union
+
+        # --- Mode dispatch ---
+        if mode == "heatmap":
+            import seaborn as sns
+
+            df = pd.DataFrame(
+                {lid: [1 if g in s else 0 for g in union]
+                 for lid, s in zip(leiden_list, sets)},
+                index=union,
+            ).sort_values(leiden_list, ascending=False).T
+
+            if figsize is None:
+                figsize = (len(union) * 0.4, 2)
+
+            plt.figure(figsize=figsize)
+            sns.heatmap(
+                df,
+                cmap="Blues",
+                linewidths=0.5,
+                linecolor="black",
+                cbar=False,
+                xticklabels=True,
+            )
+            plt.title(f"Marker genes for path {icls}")
+            plt.xlabel("")
+            plt.show()
+
+        elif mode == "dotplot":
+            _show_batch = show_batch
+            if _show_batch is None:
+                _show_batch = self.batch_expression is not None
+            if _show_batch and self.batch_expression is None:
+                raise ValueError(
+                    "show_batch=True but no batch data available. "
+                    "Run hierarchy() with batch_key."
+                )
+
+            if dot_max is None:
+                dot_max = 200.0
+
+            n_leiden = len(leiden_list)
+            n_genes = len(union)
+
+            # Cache gene-name -> column index per groupby
+            _gene_col_cache: Dict[str, Dict[str, int]] = {}
+
+            def _gene_cols(groupby: str, gene_arr: np.ndarray):
+                if groupby not in _gene_col_cache:
+                    _gene_col_cache[groupby] = {
+                        str(g): j for j, g in enumerate(gene_arr)
+                    }
+                return [_gene_col_cache[groupby][g] for g in union]
+
+            if not _show_batch:
+                # --- Non-batch dotplot ---
+                expr_mean = np.zeros((n_leiden, n_genes))
+                expr_frac = np.zeros((n_leiden, n_genes))
+
+                for i, lid in enumerate(leiden_list):
+                    groupby, group = lid.split("@", 1)
+                    ctx = self.contexts[groupby]
+                    g_idx = ctx.group_to_idx[group]
+                    cols = _gene_cols(groupby, ctx.genes)
+                    expr_mean[i] = ctx.mean_norm[g_idx, cols]
+                    expr_frac[i] = ctx.frac_expr[g_idx, cols]
+
+                if figsize is None:
+                    figsize = (n_genes * 0.5 + 2, n_leiden * 0.5 + 1)
+
+                fig, ax = plt.subplots(figsize=figsize)
+                xs = np.tile(np.arange(n_genes), n_leiden)
+                ys = np.repeat(np.arange(n_leiden), n_genes)
+
+                sc = ax.scatter(
+                    xs, ys,
+                    s=expr_frac.ravel() * dot_max,
+                    c=expr_mean.ravel(),
+                    cmap=cmap,
+                    edgecolors="none",
+                    vmin=0, vmax=1,
+                )
+
+                ax.set_xticks(np.arange(n_genes))
+                ax.set_xticklabels(union, rotation=90, ha="center")
+                ax.set_yticks(np.arange(n_leiden))
+                ax.set_yticklabels(leiden_list)
+                ax.set_xlim(-0.5, n_genes - 0.5)
+                ax.set_ylim(n_leiden - 0.5, -0.5)
+
+                ax.set_axisbelow(True)
+                ax.grid(True, axis="both", linewidth=0.5, alpha=0.3)
+
+                fig.colorbar(
+                    sc, ax=ax, label="Mean expression (normalized)",
+                    shrink=0.5,
+                )
+                for frac_val in [0.25, 0.5, 0.75, 1.0]:
+                    ax.scatter(
+                        [], [], s=frac_val * dot_max, c="gray",
+                        label=f"{frac_val:.0%}",
+                    )
+                ax.legend(
+                    title="Fraction\nexpressing",
+                    loc="upper left", bbox_to_anchor=(1.15, 1),
+                    frameon=False,
+                )
+
+                ax.set_title(f"Marker genes for path {icls}")
+                plt.tight_layout()
+                plt.show()
+
+            else:
+                # --- Batch dotplot ---
+                first_groupby = leiden_list[0].split("@", 1)[0]
+                batches = self.batch_expression[first_groupby].batches
+                n_batches = len(batches)
+                total_rows = n_leiden * n_batches
+
+                expr_mean_raw = np.zeros((total_rows, n_genes))
+                expr_frac = np.zeros((total_rows, n_genes))
+                y_positions = np.zeros(total_rows)
+
+                ytick_leiden_pos: List[float] = []
+                ytick_leiden_labels: List[str] = []
+                ytick_batch_pos: List[float] = []
+                ytick_batch_labels: List[str] = []
+
+                gap = 0.8
+                current_y = 0.0
+                row = 0
+
+                for i, lid in enumerate(leiden_list):
+                    groupby, group = lid.split("@", 1)
+                    batch_expr = self.batch_expression[groupby]
+                    g_idx = batch_expr.group_to_idx[group]
+                    cols = _gene_cols(groupby, batch_expr.genes)
+
+                    group_start_y = current_y
+                    for b_idx, batch in enumerate(batches):
+                        expr_mean_raw[row] = batch_expr.mean[
+                            g_idx, b_idx, cols
+                        ]
+                        expr_frac[row] = batch_expr.frac_expr[
+                            g_idx, b_idx, cols
+                        ]
+                        y_positions[row] = current_y
+                        ytick_batch_pos.append(current_y)
+                        ytick_batch_labels.append(batch)
+                        current_y += 1
+                        row += 1
+
+                    ytick_leiden_pos.append(
+                        (group_start_y + current_y - 1) / 2
+                    )
+                    ytick_leiden_labels.append(lid)
+                    current_y += gap
+
+                # Normalize per gene for color mapping
+                max_per_gene = expr_mean_raw.max(axis=0)
+                max_per_gene[max_per_gene == 0] = 1
+                expr_mean_norm = expr_mean_raw / max_per_gene
+
+                if figsize is None:
+                    figsize = (n_genes * 0.5 + 2, total_rows * 0.35 + 1)
+
+                fig, ax = plt.subplots(figsize=figsize)
+                xs = np.tile(np.arange(n_genes), total_rows)
+                ys = np.repeat(y_positions, n_genes)
+
+                sc = ax.scatter(
+                    xs, ys,
+                    s=expr_frac.ravel() * dot_max,
+                    c=expr_mean_norm.ravel(),
+                    cmap=cmap,
+                    edgecolors="none",
+                    vmin=0, vmax=1,
+                )
+
+                ax.set_xticks(np.arange(n_genes))
+                ax.set_xticklabels(union, rotation=90, ha="center")
+
+                # Left axis: leiden IDs at group centers
+                ax.set_yticks(ytick_leiden_pos)
+                ax.set_yticklabels(
+                    ytick_leiden_labels, fontweight="bold",
+                )
+
+                y_lo, y_hi = -0.5, y_positions[-1] + 0.5
+                ax.set_xlim(-0.5, n_genes - 0.5)
+                ax.set_ylim(y_hi, y_lo)  # inverted
+
+                # Right axis: batch labels per sub-row
+                ax2 = ax.twinx()
+                ax2.set_ylim(y_hi, y_lo)
+                ax2.set_yticks(ytick_batch_pos)
+                ax2.set_yticklabels(ytick_batch_labels, fontsize=8)
+
+                # Separator lines between leiden groups
+                for i in range(n_leiden - 1):
+                    end_row = i * n_batches + n_batches - 1
+                    start_next = (i + 1) * n_batches
+                    sep_y = (
+                        y_positions[end_row] + y_positions[start_next]
+                    ) / 2
+                    ax.axhline(
+                        y=sep_y, color="gray",
+                        linewidth=0.5, alpha=0.5,
+                    )
+
+                ax.set_axisbelow(True)
+                ax.grid(True, axis="x", linewidth=0.5, alpha=0.3)
+
+                fig.colorbar(
+                    sc, ax=ax, label="Mean expression", shrink=0.5,
+                )
+                for frac_val in [0.25, 0.5, 0.75, 1.0]:
+                    ax.scatter(
+                        [], [], s=frac_val * dot_max, c="gray",
+                        label=f"{frac_val:.0%}",
+                    )
+                ax.legend(
+                    title="Fraction\nexpressing",
+                    loc="upper left", bbox_to_anchor=(1.15, 1),
+                    frameon=False,
+                )
+
+                ax.set_title(f"Marker genes for path {icls}")
+                plt.tight_layout()
+                plt.show()
+
+        else:
+            raise ValueError(
+                f"Unknown mode: {mode!r}. Expected 'heatmap' or 'dotplot'."
+            )
+
+
+def _compute_batch_expression(adata, ctx, batch_key, use_raw=True):
+    """Compute per-batch expression statistics for one resolution level."""
+    from scipy import sparse
+
+    if use_raw and adata.raw is not None:
+        X = adata.raw.X
+    else:
+        X = adata.X
+
+    if not sparse.issparse(X):
+        X = sparse.csr_matrix(X)
+    else:
+        X = X.tocsr()
+
+    groups = ctx.groups
+    group_to_idx = ctx.group_to_idx
+    genes = ctx.genes
+    batches = sorted(adata.obs[batch_key].astype(str).unique().tolist())
+
+    n_groups = len(groups)
+    n_batches = len(batches)
+    n_genes = len(genes)
+
+    mean = np.zeros((n_groups, n_batches, n_genes), dtype=np.float32)
+    frac_expr = np.zeros((n_groups, n_batches, n_genes), dtype=np.float32)
+
+    obs_groups = adata.obs[ctx.groupby].astype(str).to_numpy()
+    obs_batches = adata.obs[batch_key].astype(str).to_numpy()
+
+    for g_name, g_idx in group_to_idx.items():
+        g_mask = obs_groups == g_name
+        for b_idx, b_name in enumerate(batches):
+            mask = g_mask & (obs_batches == b_name)
+            n_cells = int(mask.sum())
+            if n_cells == 0:
+                continue
+            Xsub = X[mask]
+            mean[g_idx, b_idx] = np.asarray(Xsub.mean(axis=0)).ravel()
+            frac_expr[g_idx, b_idx] = Xsub.getnnz(axis=0) / n_cells
+
+    return BatchExpression(
+        mean=mean,
+        frac_expr=frac_expr,
+        groups=groups,
+        batches=batches,
+        genes=genes,
+        group_to_idx=group_to_idx,
+    )
 
 
 def hierarchy(
@@ -107,6 +402,7 @@ def hierarchy(
     min_cells_for_path: int = 500,
     n_top_markers: int = 10,
     gene_filter: Optional[GeneFilter] = None,
+    batch_key: Optional[str] = None,
 ) -> HierarchyRun:
     """
     Run the user's hierarchy pipeline as-is and return all intermediate tables.
@@ -449,6 +745,20 @@ def hierarchy(
     # Execute
     markers = print_tree(tree_root)
 
+    # Build contexts dict
+    contexts = {mo.ctx.groupby: mo.ctx for mo in markers_list}
+
+    # Compute batch expression if batch_key provided
+    batch_expression = None
+    if batch_key is not None:
+        _use_raw = adata.raw is not None
+        batch_expression = {
+            mo.ctx.groupby: _compute_batch_expression(
+                adata, mo.ctx, batch_key, use_raw=_use_raw,
+            )
+            for mo in markers_list
+        }
+
     return HierarchyRun(
         levels=[str(g0), str(g1), str(g2)],
         params={"min_cells_for_path": int(min_cells_for_path), "n_top_markers": int(n_top_markers)},
@@ -461,5 +771,8 @@ def hierarchy(
         tree_root=tree_root,
         icls_to_path=icls_to_path,
         full_gene_lists=full_gene_lists,
+        contexts=contexts,
+        batch_expression=batch_expression,
+        batch_key=batch_key,
         markers=markers,
     )
