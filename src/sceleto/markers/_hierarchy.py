@@ -39,6 +39,7 @@ class HierarchyRun:
         *,
         figsize=None,
         gene_filter: Optional[GeneFilter] = None,
+        return_genes: bool = False,
     ):
         """Visualize top-N marker overlap across levels for a given icls.
 
@@ -51,6 +52,9 @@ class HierarchyRun:
         gene_filter
             Optional :class:`GeneFilter`.  Excluded genes are skipped and
             the next-ranked gene fills the slot.
+        return_genes
+            If True, return the sorted union of marker genes across levels
+            instead of plotting.
         """
         import matplotlib.pyplot as plt
         import seaborn as sns
@@ -69,6 +73,7 @@ class HierarchyRun:
 
         # Build dataframe for gene sets per level
         union = sorted(set().union(*sets))
+
         df = pd.DataFrame(
             {lid: [1 if g in s else 0 for g in union] for lid, s in zip(leiden_list, sets)},
             index=union,
@@ -90,6 +95,9 @@ class HierarchyRun:
         plt.title(f'Marker genes for path {icls}')
         plt.xlabel("")
         plt.show()
+
+        if return_genes:
+            return union
 
 
 def hierarchy(
