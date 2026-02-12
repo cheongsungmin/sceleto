@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ._classic import MarkersClassic
-from ._gene_filter import GeneFilter, EXCLUDE_PATTERNS
+from ._gene_filter import GeneFilter
 from ._hierarchy import hierarchy as _hierarchy, HierarchyRun
 
 
@@ -23,7 +23,7 @@ def marker(
     """Graph-based marker workflow (one-word entry point)."""
     from .graph import run_marker_graph  # Lazy import to keep namespace clean
     return run_marker_graph(
-        adata.copy(),
+        adata,
         groupby=groupby,
         k=k,
         thres_fc=thres_fc,
@@ -37,7 +37,7 @@ def hierarchy(adata, marker_runs, **kwargs) -> HierarchyRun:
 
 
 def __dir__():
-    return ["classic", "marker", "hierarchy", "HierarchyRun", "GeneFilter", "EXCLUDE_PATTERNS"]
+    return ["classic", "marker", "hierarchy", "GeneFilter"]
 
 
-__all__ = ["classic", "marker", "hierarchy", "HierarchyRun", "GeneFilter", "EXCLUDE_PATTERNS"]
+__all__ = ["classic", "marker", "hierarchy", "GeneFilter"]

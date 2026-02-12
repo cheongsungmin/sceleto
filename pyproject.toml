@@ -16,3 +16,6 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["sceleto*"]
 
+[tool.setuptools.package-data]
+"sceleto.data" = ["*.json"]
+

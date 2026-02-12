@@ -1,51 +1,53 @@
 """Composable gene-name filters for marker display.
 
-Built-in exclude patterns cover common non-informative gene classes
-(ncRNAs, ribosomal, mitochondrial).  The ``include`` parameter supports
-future database-backed gene sets (e.g. transcription factors, surface
-proteins).
+Uses curated gene lists from ``gene_categories.json`` to exclude or include
+genes by biological category (e.g. mitochondrial, lncRNA, transcription
+factors, surface proteins).
 
 Examples
 --------
->>> gf = GeneFilter(exclude=["ncrna", "ribosomal", "mito"])
+>>> gf = GeneFilter(exclude=["Mito_RNA", "lncRNA"])
+>>> gf("MT-CO1")
+False
 >>> gf("ACTB")
 True
->>> gf("AC012345.1")
-False
->>> gf("RPL11")
-False
 
-Combine with an include set (only keep genes in the set AND not excluded):
+Keep only transcription factors:
 
->>> tf_genes = {"PAX6", "SOX2", "FOXP2"}
->>> gf = GeneFilter(exclude=["ncrna"], include=tf_genes)
+>>> gf = GeneFilter(include=["Transcription Factor"])
 >>> gf("PAX6")
 True
->>> gf("ACTB")       # not in include set
+>>> gf("ACTB")
 False
+
+Combine exclude and include (exclude applied first, then include):
+
+>>> gf = GeneFilter(exclude=["Mito_RNA"], include=["Transcription Factor"])
 """
 
 from __future__ import annotations
 
-import re
+import json
+from importlib import resources
 from typing import (
-    Collection,
-    Dict,
+    FrozenSet,
     List,
     Optional,
     Sequence,
-    Union,
 )
 
-# ---------------------------------------------------------------------------
-# Built-in exclude patterns (regex, applied with re.search)
-# ---------------------------------------------------------------------------
-EXCLUDE_PATTERNS: Dict[str, str] = {
-    "ncrna": r"\.",              # AC012345.1, ENSG…, etc.
-    "linc": r"^LINC",            # long intergenic non-coding RNA
-    "ribosomal": r"^RP[SL]\d",   # ribosomal proteins (RPS6, RPL11, …)
-    "mito": r"^MT-",             # mitochondrial genes
-}
+
+def _load_categories() -> dict[str, list[str]]:
+    """Load gene categories from the bundled JSON file."""
+    ref = resources.files("sceleto.data").joinpath("gene_categories.json")
+    with resources.as_file(ref) as path:
+        with open(path) as f:
+            return json.load(f)
+
+
+def available_categories() -> list[str]:
+    """Return the list of available gene category names."""
+    return list(_load_categories().keys())
 
 
 class GeneFilter:
@@ -54,43 +56,65 @@ class GeneFilter:
     Parameters
     ----------
     exclude
-        Names of built-in exclude patterns (keys of ``EXCLUDE_PATTERNS``)
-        and/or raw regex strings.  A gene is dropped if it matches **any**
-        of the patterns.
+        Category names from ``gene_categories.json``.  A gene is dropped
+        if it belongs to **any** of the listed categories.
     include
-        Optional gene-name collection.  When provided, only genes present
-        in this set are kept (after exclude filtering).
+        Category names from ``gene_categories.json``.  When provided, only
+        genes present in the union of these categories are kept (after
+        exclude filtering).
+    dot_filter
+        If ``True``, exclude any gene whose name contains a dot (e.g.
+        ``AL035401.1``).  These are typically Ensembl-style non-coding or
+        poorly characterised genes.  Default ``False``.
     """
 
     def __init__(
         self,
         exclude: Optional[Sequence[str]] = None,
-        include: Optional[Collection[str]] = None,
+        include: Optional[Sequence[str]] = None,
+        dot_filter: bool = False,
     ) -> None:
+        categories = _load_categories()
+
         self._exclude_names: List[str] = []
-        self._exclude_regexes: List[re.Pattern] = []
+        self._exclude_genes: FrozenSet[str] = frozenset()
+        if exclude:
+            genes: set[str] = set()
+            for cat in exclude:
+                if cat not in categories:
+                    raise ValueError(
+                        f"Unknown category {cat!r}. "
+                        f"Available: {list(categories.keys())}"
+                    )
+                self._exclude_names.append(cat)
+                genes.update(categories[cat])
+            self._exclude_genes = frozenset(genes)
 
-        for pat in (exclude or []):
-            if pat in EXCLUDE_PATTERNS:
-                self._exclude_names.append(pat)
-                self._exclude_regexes.append(re.compile(EXCLUDE_PATTERNS[pat]))
-            else:
-                # Treat as raw regex
-                self._exclude_names.append(pat)
-                self._exclude_regexes.append(re.compile(pat))
+        self._include_names: List[str] = []
+        self._include_genes: Optional[FrozenSet[str]] = None
+        if include:
+            genes = set()
+            for cat in include:
+                if cat not in categories:
+                    raise ValueError(
+                        f"Unknown category {cat!r}. "
+                        f"Available: {list(categories.keys())}"
+                    )
+                self._include_names.append(cat)
+                genes.update(categories[cat])
+            self._include_genes = frozenset(genes)
 
-        self._include: Optional[frozenset[str]] = (
-            frozenset(include) if include is not None else None
-        )
+        self._dot_filter = dot_filter
 
     # ----- core predicate -----
 
     def __call__(self, gene: str) -> bool:
         """Return ``True`` if *gene* should be **kept**."""
-        for rx in self._exclude_regexes:
-            if rx.search(gene):
-                return False
-        if self._include is not None and gene not in self._include:
+        if self._dot_filter and "." in gene:
+            return False
+        if gene in self._exclude_genes:
+            return False
+        if self._include_genes is not None and gene not in self._include_genes:
             return False
         return True
 
@@ -104,9 +128,10 @@ class GeneFilter:
 
     def __repr__(self) -> str:
         parts: List[str] = []
+        if self._dot_filter:
+            parts.append("dot_filter=True")
         if self._exclude_names:
             parts.append(f"exclude={self._exclude_names!r}")
-        if self._include is not None:
-            n = len(self._include)
-            parts.append(f"include=<{n} genes>")
+        if self._include_names:
+            parts.append(f"include={self._include_names!r}")
         return f"GeneFilter({', '.join(parts)})"
