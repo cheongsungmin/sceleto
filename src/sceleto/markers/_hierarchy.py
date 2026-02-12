@@ -198,6 +198,8 @@ def hierarchy(
         piv = df_marker_rank[df_marker_rank["leiden"].isin([l0, l1, l2])].pivot(
             index="gene", columns="resolution", values="rank"
         )
+        # Ensure all three resolutions are present and in [g0, g1, g2] order
+        piv = piv.reindex(columns=[g0, g1, g2])
         # (B, binary) Convert presence/absence to 1/0
         df_binary = piv.notna().astype("int8")  # or "int"
 
