@@ -20,9 +20,13 @@ True
 >>> gf("ACTB")
 False
 
-Combine exclude and include (exclude applied first, then include):
+Exclude by name pattern (prefix matching, "." means contains-dot):
 
->>> gf = GeneFilter(exclude=["Mito_RNA"], include=["Transcription Factor"])
+>>> gf = GeneFilter(exclude=["lncRNA"], name_exclude=["LINC", "LOC", "."])
+>>> gf("LINC00115")
+False
+>>> gf("AL035401.1")
+False
 """
 
 from __future__ import annotations
@@ -62,16 +66,19 @@ class GeneFilter:
         Category names from ``gene_categories.json``.  When provided, only
         genes present in the union of these categories are kept (after
         exclude filtering).
+    name_exclude
+        List of name patterns to exclude.  Multi-character entries use
+        **prefix** matching (``startswith``).  The special entry ``"."``
+        excludes any gene whose name contains a dot (e.g. ``AL035401.1``).
     dot_filter
-        If ``True``, exclude any gene whose name contains a dot (e.g.
-        ``AL035401.1``).  These are typically Ensembl-style non-coding or
-        poorly characterised genes.  Default ``False``.
+        Deprecated.  Use ``name_exclude=["."]`` instead.
     """
 
     def __init__(
         self,
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
+        name_exclude: Optional[Sequence[str]] = None,
         dot_filter: bool = False,
     ) -> None:
         categories = _load_categories()
@@ -104,13 +111,21 @@ class GeneFilter:
                 genes.update(categories[cat])
             self._include_genes = frozenset(genes)
 
-        self._dot_filter = dot_filter
+        # Build name_exclude lists
+        raw = list(name_exclude) if name_exclude else []
+        if dot_filter and "." not in raw:
+            raw.append(".")
+        self._name_prefixes: List[str] = [p for p in raw if p != "."]
+        self._name_dot: bool = "." in raw
+        self._name_exclude_raw: List[str] = raw
 
     # ----- core predicate -----
 
     def __call__(self, gene: str) -> bool:
         """Return ``True`` if *gene* should be **kept**."""
-        if self._dot_filter and "." in gene:
+        if self._name_dot and "." in gene:
+            return False
+        if self._name_prefixes and any(gene.startswith(p) for p in self._name_prefixes):
             return False
         if gene in self._exclude_genes:
             return False
@@ -128,8 +143,8 @@ class GeneFilter:
 
     def __repr__(self) -> str:
         parts: List[str] = []
-        if self._dot_filter:
-            parts.append("dot_filter=True")
+        if self._name_exclude_raw:
+            parts.append(f"name_exclude={self._name_exclude_raw!r}")
         if self._exclude_names:
             parts.append(f"exclude={self._exclude_names!r}")
         if self._include_names:
