@@ -62,7 +62,7 @@ class MarkerGraphRun:
             Optional :class:`GeneFilter`.  Excluded genes are skipped and
             the next-ranked gene fills the slot.
         """
-        genes = self.specific_marker_log[group]
+        genes = self.specific_marker_log.get(group, [])
         if gene_filter is not None:
             genes = gene_filter.filter(genes)
         return genes[:n]
@@ -252,7 +252,7 @@ def run_marker_graph(
         ["group", specific_score_col], ascending=[True, False]
     )
 
-    specific_marker_log = {}
+    specific_marker_log = {str(g): [] for g in ctx.groups}
     for g, sdf in specific_ranking_df.groupby("group", sort=False):
         specific_marker_log[str(g)] = sdf["gene"].astype(str).tolist()
 
