@@ -120,6 +120,160 @@ class HierarchyRun:
         if return_genes:
             return union
 
+    def compare_markers_batch(
+        self,
+        icls: str,
+        *,
+        figsize=None,
+        gene_filter: Optional[GeneFilter] = None,
+        return_genes: bool = False,
+    ):
+        """Visualize top-N marker overlap with per-batch expression strips.
+
+        Each gene×cluster cell is subdivided into ``n_batches`` thin vertical
+        strips, sorted from highest to lowest mean expression within that cell.
+        Strips are coloured by the normalised mean expression (0–1 per gene).
+
+        Parameters
+        ----------
+        icls
+            ICLS id (string/int).
+        figsize
+            Matplotlib figsize.  If None, computed automatically.
+        gene_filter
+            Optional :class:`GeneFilter`.
+        return_genes
+            If True, return the sorted gene list instead of plotting.
+        """
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+        from matplotlib.patches import Rectangle
+
+        if self.batch_expression is None:
+            raise ValueError(
+                "No batch expression data. Re-run hierarchy() with batch_key."
+            )
+
+        # --- resolve leiden IDs and genes (same as compare_markers) ----------
+        leiden_list = (
+            self.icls_path_df.set_index("icls").loc[icls, self.levels].tolist()
+        )
+        n = self.params["n_top_markers"]
+
+        sets = []
+        for lid in leiden_list:
+            genes = self.full_gene_lists[lid]
+            if gene_filter is not None:
+                genes = gene_filter.filter(genes)
+            sets.append(set(genes[:n]))
+
+        union = sorted(set().union(*sets))
+
+        # sort genes the same way as binary heatmap (presence pattern)
+        presence_df = pd.DataFrame(
+            {lid: [1 if g in s else 0 for g in union]
+             for lid, s in zip(leiden_list, sets)},
+            index=union,
+        ).sort_values(leiden_list, ascending=False)
+        union = presence_df.index.tolist()
+
+        if return_genes:
+            return union
+
+        n_rows = len(leiden_list)
+        n_cols = len(union)
+
+        # --- collect per-batch mean expression for each (leiden, gene) -------
+        # batch_vals[row][col] = 1-D array of length n_batches (sorted desc)
+        batch_vals: List[List[np.ndarray]] = []
+        global_max = 0.0  # for colour normalisation
+
+        for lid in leiden_list:
+            groupby, group_name = lid.split("@", 1)
+            be = self.batch_expression[groupby]
+            g_idx = be.group_to_idx[group_name]
+            gene_indices = {g: int(i) for i, g in enumerate(be.genes)}
+
+            row_vals: List[np.ndarray] = []
+            for gene in union:
+                if gene in gene_indices:
+                    vals = be.mean[g_idx, :, gene_indices[gene]].copy()
+                else:
+                    vals = np.zeros(len(be.batches), dtype=np.float32)
+                row_vals.append(np.sort(vals)[::-1])  # descending
+                mx = vals.max()
+                if mx > global_max:
+                    global_max = mx
+            batch_vals.append(row_vals)
+
+        n_batches = len(next(iter(self.batch_expression.values())).batches)
+
+        # --- per-gene normalisation (0-1) ------------------------------------
+        # Collect max expression per gene across all rows/batches
+        gene_max = np.zeros(n_cols, dtype=np.float32)
+        for row in batch_vals:
+            for j, vals in enumerate(row):
+                mx = vals.max()
+                if mx > gene_max[j]:
+                    gene_max[j] = mx
+
+        # --- draw figure -----------------------------------------------------
+        if figsize is None:
+            figsize = (n_cols * 0.6, n_rows * 0.8 + 0.5)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        cmap = plt.cm.Reds
+
+        cell_w = 1.0  # width of one gene column
+        cell_h = 1.0  # height of one cluster row
+        strip_w = cell_w / n_batches
+
+        for i, lid in enumerate(leiden_list):
+            y = n_rows - 1 - i  # bottom-up so first leiden is at top
+            for j, gene in enumerate(union):
+                # only show batch strips for genes that are markers
+                # for this cluster (where binary heatmap would show 1)
+                is_marker = gene in sets[i]
+                if is_marker:
+                    vals = batch_vals[i][j]
+                    gmax = gene_max[j]
+                    for b in range(n_batches):
+                        norm_val = (vals[b] / gmax) if gmax > 0 else 0.0
+                        colour = cmap(norm_val)
+                        rect = Rectangle(
+                            (j * cell_w + b * strip_w, y * cell_h),
+                            strip_w,
+                            cell_h,
+                            facecolor=colour,
+                            edgecolor="none",
+                        )
+                        ax.add_patch(rect)
+                # cell border
+                ax.add_patch(Rectangle(
+                    (j * cell_w, y * cell_h),
+                    cell_w, cell_h,
+                    facecolor="none", edgecolor="black", linewidth=0.5,
+                ))
+
+        ax.set_xlim(0, n_cols * cell_w)
+        ax.set_ylim(0, n_rows * cell_h)
+        ax.set_xticks([j * cell_w + cell_w / 2 for j in range(n_cols)])
+        ax.set_xticklabels(union, rotation=90, ha="center", fontsize=8)
+        ax.set_yticks([i * cell_h + cell_h / 2 for i in range(n_rows)])
+        ax.set_yticklabels(leiden_list[::-1], fontsize=9)
+        ax.set_title(f"Marker genes for path {icls} (per-batch)")
+
+        # colorbar
+        sm = plt.cm.ScalarMappable(
+            cmap=cmap, norm=mcolors.Normalize(vmin=0, vmax=1),
+        )
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax, fraction=0.02, pad=0.02)
+        cbar.set_label("Normalised mean expression")
+
+        plt.tight_layout()
+        plt.show()
+
 
 def _compute_batch_expression(adata, ctx, batch_key, use_raw=True):
     """Compute per-batch expression statistics for one resolution level."""
